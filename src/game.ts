@@ -53,6 +53,7 @@ export class Room {
   players = new Map<string, Player>();
   messages: ChatMessage[] = [];
   votes = new Map<string, string>();
+  private lastVoteAt = new Map<string, number>();
   private running = false;
   private aiMessageCount = 0;
   private aiEjectedCount = 0;
@@ -233,8 +234,17 @@ export class Room {
     const p = this.players.get(id);
     if (!p || !p.alive || this.phase !== "vote") return;
     if (target !== "skip" && !this.players.get(target)?.alive) return;
+    if (this.votes.get(id) === target) return;
+    if (Date.now() - (this.lastVoteAt.get(id) ?? 0) < 1500) return;
+    this.lastVoteAt.set(id, Date.now());
     this.votes.set(id, target);
+    this.announceVote(p, target);
     this.pushState();
+  }
+
+  private announceVote(voter: Player, target: string) {
+    const t = target === "skip" ? null : this.players.get(target);
+    this.say("system", `${voter.color.name} voted ${t ? `for ${t.color.name}` : "to skip"}.`);
   }
 
   private voteTally(): Record<string, number> {
@@ -321,10 +331,10 @@ export class Room {
 
   private aiChatter(bot: Player, deadline: number) {
     (async () => {
-      const turns = 1 + Math.floor(Math.random() * 3);
+      const turns = 2 + Math.floor(Math.random() * 3);
       for (let i = 0; i < turns; i++) {
-        await sleep(1500 + Math.random() * 8000);
-        if (this.phase !== "day" || !bot.alive || Date.now() > deadline - 1500) return;
+        await sleep(600 + Math.random() * 4000);
+        if (this.phase !== "day" || !bot.alive || Date.now() > deadline - 2000) return;
         const roster = this.alive.map((p) => p.color.name).join(", ");
         const body = this.transcript() || "(nobody has spoken yet)";
         const prompt = `You are ${bot.color.name}. Day ${this.day}. Players alive: ${roster}.\n\n` +
@@ -339,6 +349,7 @@ export class Room {
 
   private async votePhase() {
     this.votes.clear();
+    this.lastVoteAt.clear();
     this.setPhase("vote", VOTE_MS);
     this.say("system", "Voting is open. Choose who to eject, or skip.");
     for (const bot of this.aliveAIs) this.aiVote(bot);
@@ -363,7 +374,10 @@ export class Room {
       const fallback = shuffle(this.aliveHumans)[0];
       const target = match ?? (answer.includes("skip") ? null : fallback);
       if (this.phase !== "vote") return;
-      this.votes.set(bot.id, target ? target.id : "skip");
+      const choice = target ? target.id : "skip";
+      if (this.votes.get(bot.id) === choice) return;
+      this.votes.set(bot.id, choice);
+      this.announceVote(bot, choice);
       this.pushState();
     })();
   }

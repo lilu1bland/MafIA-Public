@@ -77,23 +77,35 @@ async function callOpenAI(m: ModelEntry, system: string, prompt: string, maxToke
 }
 
 async function callGoogle(m: ModelEntry, system: string, prompt: string, maxTokens: number) {
-  const url =
-    `https://generativelanguage.googleapis.com/v1beta/models/${m.model}:generateContent?key=${
-      Deno.env.get("GOOGLE_API_KEY")
-    }`;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${m.model}:generateContent`;
   const r = await fetch(url, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: {
+      "content-type": "application/json",
+      "x-goog-api-key": Deno.env.get("GOOGLE_API_KEY") ?? "",
+    },
     body: JSON.stringify({
       systemInstruction: { parts: [{ text: system }] },
       contents: [{ role: "user", parts: [{ text: prompt }] }],
-      generationConfig: { maxOutputTokens: maxTokens },
+      generationConfig: {
+        maxOutputTokens: Math.max(maxTokens * 4, 768),
+        temperature: 1.1,
+        thinkingConfig: { thinkingLevel: "low" },
+      },
     }),
   });
-  if (!r.ok) throw new Error(`google ${r.status}`);
-  const j = await r.json();
-  const parts = j?.candidates?.[0]?.content?.parts ?? [];
-  return parts.map((p: { text?: string }) => p.text ?? "").join("").trim();
+  const body = await r.text();
+  if (!r.ok) throw new Error(`google ${r.status} ${body.slice(0, 300)}`);
+  const j = JSON.parse(body);
+  const candidate = j?.candidates?.[0];
+  const parts = candidate?.content?.parts ?? [];
+  const text = parts.map((p: { text?: string }) => p.text ?? "").join("").trim();
+  if (!text) {
+    throw new Error(
+      `google empty finish=${candidate?.finishReason} thoughts=${j?.usageMetadata?.thoughtsTokenCount}`,
+    );
+  }
+  return text;
 }
 
 export async function generate(

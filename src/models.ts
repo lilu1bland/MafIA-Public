@@ -12,7 +12,7 @@ export const MODELS: ModelEntry[] = [
   { id: "sonnet-5", label: "Claude Sonnet 5", provider: "anthropic", model: "claude-sonnet-5" },
   { id: "haiku-4-5", label: "Claude Haiku 4.5", provider: "anthropic", model: "claude-haiku-4-5" },
   { id: "gpt-5", label: "GPT-5", provider: "openai", model: "gpt-5" },
-  { id: "gemini-2-5-flash", label: "Gemini 2.5 Flash", provider: "google", model: "gemini-2.5-flash" },
+  { id: "gemini-3-6-flash", label: "Gemini 3.6 Flash", provider: "google", model: "gemini-3.6-flash" },
   { id: "scripted", label: "Scripted Bot", provider: "scripted", model: "scripted" },
 ];
 
