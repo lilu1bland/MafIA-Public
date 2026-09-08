@@ -8,6 +8,12 @@ export interface ModelEntry {
 }
 
 export const MODELS: ModelEntry[] = [
+  {
+    id: "gemini-flash-lite",
+    label: "Gemini Flash Lite",
+    provider: "google",
+    model: "gemini-flash-lite-latest",
+  },
   { id: "gemini-flash", label: "Gemini Flash", provider: "google", model: "gemini-flash-latest" },
 ];
 

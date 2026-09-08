@@ -358,13 +358,17 @@ export class Room {
         const situation = fresh === 0
           ? "Nobody has spoken since you last checked."
           : `${fresh} new message(s) since you last checked.`;
+        const duty = spoken === 0
+          ? "You have not spoken at all this round. You must reply with a message, not PASS."
+          : `You have sent ${spoken} message(s) this round.`;
         const prompt = `You are ${bot.color.name}. Day ${this.day}. Players alive: ${roster}.\n` +
-          `${situation} You have sent ${spoken} message(s) today.\n\n` +
+          `${situation} ${duty}\n\n` +
           `Chat so far:\n${body}\n\nPASS or your message:`;
         const text = await generate(bot.modelId ?? "", CHAT_SYSTEM, prompt, 120);
         if (this.phase !== "day" || !bot.alive) return;
         const clean = text.replace(/^["']+|["']+$/g, "").trim();
-        if (!clean || /^pass\b/i.test(clean)) continue;
+        if (!clean) continue;
+        if (/^pass\b/i.test(clean) || /^pass$/i.test(clean)) continue;
         spoken += 1;
         this.aiMessageCount += 1;
         this.say("chat", clean.slice(0, 300), bot);
@@ -442,7 +446,8 @@ export class Room {
     this.setPhase("night", NIGHT_MS);
     this.say("system", "Night falls. The survivors go quiet.");
     const bots = this.aliveAIs;
-    for (let r = 0; r < 2; r++) {
+    const rounds = bots.length > 1 ? 1 : 0;
+    for (let r = 0; r < rounds; r++) {
       for (const bot of bots) {
         if (this.phase !== "night") return;
         const targets = this.aliveHumans.map((p) => p.color.name).join(", ");
@@ -457,7 +462,7 @@ export class Room {
     }
     const decider = bots[0];
     let victim = shuffle(this.aliveHumans)[0];
-    if (decider && this.aliveHumans.length > 0) {
+    if (decider && this.aliveHumans.length > 1) {
       const targets = this.aliveHumans.map((p) => p.color.name).join(", ");
       const prompt = `Humans alive: ${targets}\n\nDiscussion:\n${this.privateTranscript()}\n\n` +
         `Target:`;

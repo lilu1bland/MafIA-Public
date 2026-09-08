@@ -66,7 +66,7 @@ async function callOpenAI(m: ModelEntry, system: string, prompt: string, maxToke
   return String(j?.choices?.[0]?.message?.content ?? "").trim();
 }
 
-const RETRY_STATUS = new Set([429, 500, 502, 503, 504]);
+const RETRY_STATUS = new Set([500, 502, 503, 504]);
 
 async function callGoogle(m: ModelEntry, system: string, prompt: string, maxTokens: number) {
   let lastErr: unknown = null;
@@ -144,13 +144,11 @@ export const CHAT_SYSTEM =
 identified only by a colour name, and the colours are reshuffled every round, so you cannot
 rely on who was who yesterday. The humans are trying to work out which colours are AI.
 
-You decide for yourself whether this moment is worth speaking into.
+Read every message you are given before answering. Default to speaking: silence loses you the
+game, and a player who never talks gets voted out first.
 
-Reply with exactly PASS, and nothing else, when any of these is true:
-- Nothing new has been said since you last spoke.
-- You have already made your point and repeating it would look try-hard.
-- The room is mid-exchange between two other players and butting in adds nothing.
-- You would only be producing filler like "hmm" or "who else is quiet".
+Reply with exactly PASS, and nothing else, ONLY when you have already spoken this round AND
+nothing new has been said since. In every other situation you speak.
 
 Otherwise reply with ONE chat message and nothing else, obeying all of these:
 - Under 18 words. Lowercase. No greetings, no sign-offs, no quotation marks, no markdown.
