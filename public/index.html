@@ -8,79 +8,63 @@
 </head>
 <body>
 
-<header class="topbar">
-  <div class="brand">Maf<span>IA</span></div>
-  <div class="topbar-actions">
-    <button id="btn-stats" class="ghost">Leaderboard</button>
-    <span id="conn" class="conn">connecting…</span>
-  </div>
+<header>
+  <b>MafIA</b>
+  <span>
+    <button id="btn-stats">Leaderboard</button>
+    <span id="conn">connecting</span>
+  </span>
 </header>
 
 <main>
 
   <section id="screen-home" class="screen active">
-    <div class="card">
-      <h1>Find the machine.</h1>
-      <p class="sub">Three to fifteen players. One extra seat per three humans is quietly filled by an AI.
-      Talk, accuse, vote. Survive.</p>
-      <label for="name">Your name</label>
-      <input id="name" maxlength="20" placeholder="e.g. adam" autocomplete="off" />
-      <div class="row">
-        <button id="btn-create" class="primary">Create lobby</button>
-      </div>
-      <div class="divider"><span>or</span></div>
-      <div class="row">
-        <input id="code" maxlength="4" inputmode="numeric" placeholder="4-digit code" autocomplete="off" />
-        <button id="btn-join">Join</button>
-      </div>
-      <p id="home-error" class="error"></p>
-    </div>
+    <h1>MafIA</h1>
+    <p>3 to 15 players. One extra seat per three humans is an AI. Talk, vote, survive.</p>
+    <label for="name">Name</label>
+    <input id="name" maxlength="20" placeholder="skibidi toilet" autocomplete="off" />
+    <p><button id="btn-create">Create lobby</button></p>
+    <p>
+      <input id="code" maxlength="4" inputmode="numeric" placeholder="0000" autocomplete="off" />
+      <button id="btn-join">Join</button>
+    </p>
+    <p id="home-error"></p>
   </section>
 
   <section id="screen-lobby" class="screen">
-    <div class="card">
-      <div class="code-block">
-        <span class="label">Lobby code</span>
-        <span id="lobby-code" class="code">----</span>
-      </div>
-      <div class="lobby-meta">
-        <span id="lobby-count">0 players</span>
-        <span id="lobby-model" class="pill"></span>
-      </div>
-      <ul id="lobby-players" class="player-list"></ul>
-      <div class="host-controls" id="host-controls" hidden>
-        <label for="model-select">AI model for this match</label>
-        <select id="model-select"></select>
-        <button id="btn-start" class="primary">Start match</button>
-      </div>
-      <p id="lobby-hint" class="hint"></p>
+    <h1>Lobby <span id="lobby-code">----</span></h1>
+    <p><span id="lobby-count"></span> &middot; <span id="lobby-model"></span></p>
+    <ul id="lobby-players"></ul>
+    <div id="host-controls" hidden>
+      <label for="model-select">AI model</label>
+      <select id="model-select"></select>
+      <button id="btn-start">Start match</button>
     </div>
+    <p id="lobby-hint"></p>
   </section>
 
-  <section id="screen-game" class="screen game">
-    <div class="chat-pane">
-      <div class="phase-bar">
-        <span id="phase-label">Day 1</span>
-        <span id="phase-timer" class="timer">30</span>
+  <section id="screen-game" class="screen">
+    <div id="chat">
+      <div id="phase-bar">
+        <span id="phase-label"></span>
+        <span id="phase-timer">--</span>
       </div>
-      <div id="messages" class="messages"></div>
-      <div id="composer" class="composer">
-        <button id="btn-gif" class="ghost gif-btn">GIF</button>
-        <input id="chat-input" maxlength="300" placeholder="Say something…" autocomplete="off" />
-        <button id="btn-send" class="primary">Send</button>
+      <div id="messages"></div>
+      <div id="composer">
+        <button id="btn-gif">GIF</button>
+        <input id="chat-input" maxlength="300" placeholder="Message" autocomplete="off" />
+        <button id="btn-send">Send</button>
       </div>
-      <div id="spectator-bar" class="spectator-bar" hidden>
-        You are dead. You can see everything, but you cannot speak or vote.
-      </div>
+      <p id="spectator-bar" hidden>You are dead. You can watch but not speak or vote.</p>
     </div>
-    <aside class="sidebar">
+    <aside>
       <h2 id="sidebar-title">Players</h2>
-      <ul id="game-players" class="player-list compact"></ul>
-      <div id="vote-panel" class="vote-panel" hidden>
-        <h3>Vote</h3>
+      <ul id="game-players"></ul>
+      <div id="vote-panel" hidden>
+        <h2>Vote</h2>
         <div id="vote-options"></div>
       </div>
-      <div id="result-banner" class="result-banner" hidden></div>
+      <p id="result-banner" hidden></p>
     </aside>
   </section>
 
@@ -88,21 +72,17 @@
 
 <div id="gif-modal" class="modal" hidden>
   <div class="modal-body">
-    <div class="modal-head">
-      <input id="gif-search" placeholder="Search GIFs…" autocomplete="off" />
-      <button id="gif-close" class="ghost">Close</button>
-    </div>
-    <div id="gif-results" class="gif-grid"></div>
-    <p id="gif-note" class="hint"></p>
+    <input id="gif-search" placeholder="Search GIFs" autocomplete="off" />
+    <button id="gif-close">Close</button>
+    <div id="gif-results"></div>
+    <p id="gif-note"></p>
   </div>
 </div>
 
 <div id="stats-modal" class="modal" hidden>
   <div class="modal-body">
-    <div class="modal-head">
-      <h2>Model leaderboard</h2>
-      <button id="stats-close" class="ghost">Close</button>
-    </div>
+    <h2>Model leaderboard</h2>
+    <button id="stats-close">Close</button>
     <div id="stats-body"></div>
   </div>
 </div>

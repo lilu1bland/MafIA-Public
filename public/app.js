@@ -18,12 +18,12 @@ function connect() {
 
   ws.onopen = () => {
     $("conn").textContent = "online";
-    $("conn").style.color = "var(--ok)";
+    $("conn").style.color = "green";
   };
 
   ws.onclose = () => {
     $("conn").textContent = "disconnected";
-    $("conn").style.color = "var(--accent)";
+    $("conn").style.color = "red";
     setTimeout(connect, 2500);
   };
 
@@ -251,9 +251,13 @@ function addMessage(msg) {
 
 setInterval(() => {
   const s = state.snapshot;
-  if (!s || s.phase === "lobby") return;
+  const el = $("phase-timer");
+  if (!s || s.phase === "lobby" || s.phase === "over") {
+    el.textContent = "--";
+    return;
+  }
   const left = Math.max(0, Math.ceil((s.endsAt - Date.now()) / 1000));
-  $("phase-timer").textContent = left > 0 ? String(left) : "";
+  el.textContent = left + "s";
 }, 250);
 
 $("btn-create").onclick = () => {
