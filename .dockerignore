@@ -1,0 +1,8 @@
+.git
+.github
+.env
+.env.local
+node_modules
+*.md
+kv.sqlite3*
+deno.lock

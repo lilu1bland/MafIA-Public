@@ -1,0 +1,61 @@
+{
+  "version": "3",
+  "packages": {
+    "specifiers": {
+      "jsr:@std/dotenv@^0.225.2": "jsr:@std/dotenv@0.225.8",
+      "jsr:@std/internal@^1.0.14": "jsr:@std/internal@1.0.14",
+      "jsr:@std/media-types@^1.0.3": "jsr:@std/media-types@1.1.0",
+      "jsr:@std/path@^1.0.8": "jsr:@std/path@1.1.6",
+      "npm:@anthropic-ai/sdk@^0.71.0": "npm:@anthropic-ai/sdk@0.71.2"
+    },
+    "jsr": {
+      "@std/dotenv@0.225.8": {
+        "integrity": "27b8c1a9d00cbf938345a5924487c04d9b27bdd7e7bd1983f54bcf76d0a0174a"
+      },
+      "@std/internal@1.0.14": {
+        "integrity": "291516b3d4c35024d6ffbc0a9df5bf4c64116e05b50012cf846710152d2ffdf7"
+      },
+      "@std/media-types@1.1.0": {
+        "integrity": "c9d093f0c05c3512932b330e3cc1fe1d627b301db33a4c2c2185c02471d6eaa4"
+      },
+      "@std/path@1.1.6": {
+        "integrity": "c68485c2a4dfbb5ae3cc74fae4e8c4e5d874cf8a8ed12927917235c758b46cbe",
+        "dependencies": [
+          "jsr:@std/internal@^1.0.14"
+        ]
+      }
+    },
+    "npm": {
+      "@anthropic-ai/sdk@0.71.2": {
+        "integrity": "sha512-TGNDEUuEstk/DKu0/TflXAEt+p+p/WhTlFzEnoosvbaDU2LTjm42igSdlL0VijrKpWejtOKxX0b8A7uc+XiSAQ==",
+        "dependencies": {
+          "json-schema-to-ts": "json-schema-to-ts@3.1.1"
+        }
+      },
+      "@babel/runtime@7.29.7": {
+        "integrity": "sha512-Nq8OhGWiZIZGV6hLHoyAKLLcJihP/xFeBMGJoUrxTX2psI8dCifzLhZISFb+VWS3wFMRDmCGw5R+dOySCqPLhw==",
+        "dependencies": {}
+      },
+      "json-schema-to-ts@3.1.1": {
+        "integrity": "sha512-+DWg8jCJG2TEnpy7kOm/7/AxaYoaRbjVB4LFZLySZlWn8exGs3A4OLJR966cVvU26N7X9TWxl+Jsw7dzAqKT6g==",
+        "dependencies": {
+          "@babel/runtime": "@babel/runtime@7.29.7",
+          "ts-algebra": "ts-algebra@2.0.0"
+        }
+      },
+      "ts-algebra@2.0.0": {
+        "integrity": "sha512-FPAhNPFMrkwz76P7cdjdmiShwMynZYN6SgOujD1urY4oNm80Ou9oMdmbR45LotcKOXoy7wSmHkRFE6Mxbrhefw==",
+        "dependencies": {}
+      }
+    }
+  },
+  "remote": {},
+  "workspace": {
+    "dependencies": [
+      "jsr:@std/dotenv@^0.225.2",
+      "jsr:@std/media-types@^1.0.3",
+      "jsr:@std/path@^1.0.8",
+      "npm:@anthropic-ai/sdk@^0.71.0"
+    ]
+  }
+}
