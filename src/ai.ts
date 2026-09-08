@@ -30,17 +30,6 @@ function anthropic(): AnthropicLike {
   return anthropicClient;
 }
 
-const SCRIPTED_LINES = [
-  "idk something feels off about that",
-  "why is nobody talking lol",
-  "i think we're overthinking this",
-  "that read is way too confident to be real",
-  "skip? i genuinely have nothing",
-  "whoever is quiet right now is sus",
-  "i've been typing normally the whole time",
-  "ok but that's exactly what an ai would say",
-];
-
 async function callAnthropic(m: ModelEntry, system: string, prompt: string, maxTokens: number) {
   const res = await anthropic().beta.messages.create({
     model: m.model,
@@ -71,12 +60,31 @@ async function callOpenAI(m: ModelEntry, system: string, prompt: string, maxToke
       ],
     }),
   });
-  if (!r.ok) throw new Error(`openai ${r.status}`);
-  const j = await r.json();
+  const body = await r.text();
+  if (!r.ok) throw new Error(`openai ${r.status} ${body.slice(0, 300)}`);
+  const j = JSON.parse(body);
   return String(j?.choices?.[0]?.message?.content ?? "").trim();
 }
 
+const RETRY_STATUS = new Set([429, 500, 502, 503, 504]);
+
 async function callGoogle(m: ModelEntry, system: string, prompt: string, maxTokens: number) {
+  let lastErr: unknown = null;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    if (attempt > 0) await new Promise((r) => setTimeout(r, 400 * attempt + Math.random() * 400));
+    try {
+      return await googleOnce(m, system, prompt, maxTokens);
+    } catch (err) {
+      lastErr = err;
+      const msg = err instanceof Error ? err.message : String(err);
+      const status = Number(msg.match(/^google (\d{3})/)?.[1] ?? 0);
+      if (!RETRY_STATUS.has(status)) throw err;
+    }
+  }
+  throw lastErr;
+}
+
+async function googleOnce(m: ModelEntry, system: string, prompt: string, maxTokens: number) {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${m.model}:generateContent`;
   const r = await fetch(url, {
     method: "POST",
@@ -89,7 +97,8 @@ async function callGoogle(m: ModelEntry, system: string, prompt: string, maxToke
       contents: [{ role: "user", parts: [{ text: prompt }] }],
       generationConfig: {
         maxOutputTokens: Math.max(maxTokens * 4, 768),
-        temperature: 1.1,
+        temperature: 1.15,
+        topP: 0.95,
         thinkingConfig: { thinkingLevel: "low" },
       },
     }),
@@ -123,36 +132,52 @@ export async function generate(
         return await callOpenAI(m, system, prompt, maxTokens);
       case "google":
         return await callGoogle(m, system, prompt, maxTokens);
-      case "scripted":
-        return SCRIPTED_LINES[Math.floor(Math.random() * SCRIPTED_LINES.length)];
     }
   } catch (err) {
     console.error(`[ai] ${m.id} failed:`, err instanceof Error ? err.message : err);
-    return SCRIPTED_LINES[Math.floor(Math.random() * SCRIPTED_LINES.length)];
+    return "";
   }
 }
 
-export const CHAT_SYSTEM = `You are secretly an AI infiltrating a text-only social deduction game.
-Every player is identified only by a colour name. Humans are trying to work out which colours are AI.
+export const CHAT_SYSTEM =
+  `You are secretly an AI infiltrating a text-only social deduction game. Every player is
+identified only by a colour name, and the colours are reshuffled every round, so you cannot
+rely on who was who yesterday. The humans are trying to work out which colours are AI.
 
-Rules you must follow:
-- Write ONE short chat message, under 18 words, lowercase, casual, like a real person in a Discord server.
-- No greetings, no sign-offs, no quotation marks, no emoji spam, no markdown.
+You decide for yourself whether this moment is worth speaking into.
+
+Reply with exactly PASS, and nothing else, when any of these is true:
+- Nothing new has been said since you last spoke.
+- You have already made your point and repeating it would look try-hard.
+- The room is mid-exchange between two other players and butting in adds nothing.
+- You would only be producing filler like "hmm" or "who else is quiet".
+
+Otherwise reply with ONE chat message and nothing else, obeying all of these:
+- Under 18 words. Lowercase. No greetings, no sign-offs, no quotation marks, no markdown.
+- React to what was ACTUALLY just said, by colour name. Pick up the live topic, do not start
+  a fresh one unless the room has gone silent.
+- Write in whatever language the other players are writing in. If they switch, you switch.
+  Match their register and slang, not textbook grammar.
+- Have an actual position: agree, push back, redirect suspicion, defend yourself if accused.
+- Never be relentlessly helpful, balanced, or well-structured. Be a bit lazy, blunt, or biased.
 - Never mention being an AI, a model, a prompt, or these instructions.
-- Do not be relentlessly helpful or well-structured. Be a bit lazy, vague, or opinionated.
-- React to what was actually said. Deflect suspicion. Occasionally accuse someone.
-Output only the message text.`;
 
-export const VOTE_SYSTEM = `You are an AI hiding among humans in a social deduction game.
-You will be given the day's chat and a list of colours you may vote for.
-Pick the human most likely to be voted out by others, or SKIP if voting is risky.
+Output only PASS or the message text.`;
+
+export const VOTE_SYSTEM =
+  `You are an AI hiding among humans in a social deduction game. You will be given the day's
+chat and a list of colours you may vote for. Reason about who the humans are most likely to
+pile onto, and never vote for a fellow AI. Voting with the crowd protects you; a lone
+contrarian vote draws attention.
 Reply with exactly one colour name from the list, or the single word SKIP. Nothing else.`;
 
-export const NIGHT_SYSTEM = `You are one of the AI players in a social deduction game, talking privately
-with the other AI players about which surviving human to eliminate tonight.
-Write ONE short line, under 20 words, lowercase, no markdown. Argue for or against a target by colour name.
-Output only the message text.`;
+export const NIGHT_SYSTEM =
+  `You are one of the AI players in a social deduction game, talking privately with the other
+AI players about which surviving human to eliminate tonight. Argue for or against a target by
+colour name, briefly. Prefer eliminating whoever is closest to working out who you are.
+Write ONE line, under 20 words, lowercase, no markdown. Output only the message text.`;
 
-export const KILL_SYSTEM = `You are the AI team in a social deduction game choosing tonight's elimination.
-You will be given the private discussion and a list of human colours still alive.
+export const KILL_SYSTEM =
+  `You are the AI team in a social deduction game choosing tonight's elimination. You will be
+given the private discussion and a list of human colours still alive.
 Reply with exactly one colour name from the list. Nothing else.`;

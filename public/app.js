@@ -47,8 +47,10 @@ function handle(m) {
     return;
   }
   if (m.t === "history") {
-    $("messages").innerHTML = "";
+    const box = $("messages");
+    box.innerHTML = "";
     m.messages.forEach(addMessage);
+    box.scrollTop = box.scrollHeight;
     return;
   }
   if (m.t === "msg") {
@@ -244,9 +246,8 @@ function addMessage(msg) {
     el.appendChild(body);
   }
 
-  const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 80;
   box.appendChild(el);
-  if (atBottom) box.scrollTop = box.scrollHeight;
+  box.scrollTop = box.scrollHeight;
 }
 
 setInterval(() => {

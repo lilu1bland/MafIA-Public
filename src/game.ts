@@ -319,11 +319,23 @@ export class Room {
     this.pushState();
   }
 
+  private reshuffleColors() {
+    const pool = shuffle(COLORS);
+    this.list.forEach((p, i) => {
+      p.color = pool[i % pool.length];
+    });
+  }
+
+  private chatCount(): number {
+    return this.messages.filter((m) => m.kind === "chat").length;
+  }
+
   private async dayPhase() {
     this.day += 1;
     this.votes.clear();
+    this.reshuffleColors();
     this.setPhase("day", DAY_MS);
-    this.say("system", `Day ${this.day} has begun. ${this.alive.length} players remain.`);
+    this.say("system", `Day ${this.day}. ${this.alive.length} remain. Colours have been reshuffled.`);
     const deadline = this.phaseEndsAt;
     for (const bot of this.aliveAIs) this.aiChatter(bot, deadline);
     await sleep(DAY_MS);
@@ -331,18 +343,32 @@ export class Room {
 
   private aiChatter(bot: Player, deadline: number) {
     (async () => {
-      const turns = 2 + Math.floor(Math.random() * 3);
-      for (let i = 0; i < turns; i++) {
-        await sleep(600 + Math.random() * 4000);
-        if (this.phase !== "day" || !bot.alive || Date.now() > deadline - 2000) return;
+      let spoken = 0;
+      let seen = this.chatCount();
+      while (this.phase === "day" && bot.alive && Date.now() < deadline - 2500) {
+        await sleep(2000 + Math.random() * 4000);
+        if (this.phase !== "day" || !bot.alive || Date.now() > deadline - 2500) return;
+        if (spoken >= 3) return;
+        const count = this.chatCount();
+        const fresh = count - seen;
+        seen = count;
+        if (fresh === 0 && spoken > 0) continue;
         const roster = this.alive.map((p) => p.color.name).join(", ");
         const body = this.transcript() || "(nobody has spoken yet)";
-        const prompt = `You are ${bot.color.name}. Day ${this.day}. Players alive: ${roster}.\n\n` +
-          `Chat so far:\n${body}\n\nYour message:`;
-        const text = await generate(bot.modelId ?? "scripted", CHAT_SYSTEM, prompt, 120);
-        if (!text || this.phase !== "day" || !bot.alive) return;
+        const situation = fresh === 0
+          ? "Nobody has spoken since you last checked."
+          : `${fresh} new message(s) since you last checked.`;
+        const prompt = `You are ${bot.color.name}. Day ${this.day}. Players alive: ${roster}.\n` +
+          `${situation} You have sent ${spoken} message(s) today.\n\n` +
+          `Chat so far:\n${body}\n\nPASS or your message:`;
+        const text = await generate(bot.modelId ?? "", CHAT_SYSTEM, prompt, 120);
+        if (this.phase !== "day" || !bot.alive) return;
+        const clean = text.replace(/^["']+|["']+$/g, "").trim();
+        if (!clean || /^pass\b/i.test(clean)) continue;
+        spoken += 1;
         this.aiMessageCount += 1;
-        this.say("chat", text.replace(/^["']+|["']+$/g, "").slice(0, 300), bot);
+        this.say("chat", clean.slice(0, 300), bot);
+        seen = this.chatCount();
       }
     })();
   }
@@ -366,7 +392,7 @@ export class Room {
       const prompt = `You are ${bot.color.name}. Your fellow AI players are: ` +
         `${allies.join(", ") || "none"}.\nNever vote for a fellow AI.\n` +
         `Options: ${options.join(", ")}, SKIP\n\nChat:\n${this.transcript()}\n\nYour vote:`;
-      const raw = await generate(bot.modelId ?? "scripted", VOTE_SYSTEM, prompt, 20);
+      const raw = await generate(bot.modelId ?? "", VOTE_SYSTEM, prompt, 20);
       const answer = raw.trim().toLowerCase();
       const match = this.alive.find(
         (p) => !p.isAI && answer.includes(p.color.name.toLowerCase()),
@@ -424,7 +450,7 @@ export class Room {
         const prompt = `You are ${bot.color.name}. Humans still alive: ${targets}.\n\n` +
           `Today's public chat:\n${this.transcript(20)}\n\n` +
           `Private AI discussion so far:\n${priv}\n\nYour line:`;
-        const text = await generate(bot.modelId ?? "scripted", NIGHT_SYSTEM, prompt, 100);
+        const text = await generate(bot.modelId ?? "", NIGHT_SYSTEM, prompt, 100);
         if (text) this.say("ai_private", text.slice(0, 300), bot);
         await sleep(600);
       }
@@ -435,7 +461,7 @@ export class Room {
       const targets = this.aliveHumans.map((p) => p.color.name).join(", ");
       const prompt = `Humans alive: ${targets}\n\nDiscussion:\n${this.privateTranscript()}\n\n` +
         `Target:`;
-      const raw = await generate(decider.modelId ?? "scripted", KILL_SYSTEM, prompt, 20);
+      const raw = await generate(decider.modelId ?? "", KILL_SYSTEM, prompt, 20);
       const answer = raw.trim().toLowerCase();
       victim = this.aliveHumans.find((p) => answer.includes(p.color.name.toLowerCase())) ?? victim;
     }

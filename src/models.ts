@@ -1,4 +1,4 @@
-export type ProviderId = "anthropic" | "openai" | "google" | "scripted";
+export type ProviderId = "anthropic" | "openai" | "google";
 
 export interface ModelEntry {
   id: string;
@@ -8,12 +8,7 @@ export interface ModelEntry {
 }
 
 export const MODELS: ModelEntry[] = [
-  { id: "opus-5", label: "Claude Opus 5", provider: "anthropic", model: "claude-opus-5" },
-  { id: "sonnet-5", label: "Claude Sonnet 5", provider: "anthropic", model: "claude-sonnet-5" },
-  { id: "haiku-4-5", label: "Claude Haiku 4.5", provider: "anthropic", model: "claude-haiku-4-5" },
-  { id: "gpt-5", label: "GPT-5", provider: "openai", model: "gpt-5" },
-  { id: "gemini-3-6-flash", label: "Gemini 3.6 Flash", provider: "google", model: "gemini-3.6-flash" },
-  { id: "scripted", label: "Scripted Bot", provider: "scripted", model: "scripted" },
+  { id: "gemini-flash", label: "Gemini Flash", provider: "google", model: "gemini-flash-latest" },
 ];
 
 export function providerAvailable(p: ProviderId): boolean {
@@ -24,8 +19,6 @@ export function providerAvailable(p: ProviderId): boolean {
       return !!Deno.env.get("OPENAI_API_KEY");
     case "google":
       return !!Deno.env.get("GOOGLE_API_KEY");
-    case "scripted":
-      return true;
   }
 }
 
@@ -34,11 +27,11 @@ export function availableModels(): ModelEntry[] {
 }
 
 export function getModel(id: string): ModelEntry {
-  return MODELS.find((m) => m.id === id) ?? MODELS[MODELS.length - 1];
+  return MODELS.find((m) => m.id === id) ?? MODELS[0];
 }
 
 export function randomModel(): ModelEntry {
-  const pool = availableModels().filter((m) => m.provider !== "scripted");
-  const list = pool.length > 0 ? pool : availableModels();
+  const list = availableModels();
+  if (list.length === 0) return MODELS[0];
   return list[Math.floor(Math.random() * list.length)];
 }
