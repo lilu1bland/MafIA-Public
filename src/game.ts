@@ -278,6 +278,7 @@ export class Room {
     this.aiEjectedCount = 0;
     this.running = true;
     for (const p of this.list) p.alive = true;
+    this.reshuffleColors();
     this.loop();
   }
 
@@ -333,9 +334,8 @@ export class Room {
   private async dayPhase() {
     this.day += 1;
     this.votes.clear();
-    this.reshuffleColors();
     this.setPhase("day", DAY_MS);
-    this.say("system", `Day ${this.day}. ${this.alive.length} remain. Colours have been reshuffled.`);
+    this.say("system", `Day ${this.day}. ${this.alive.length} players remain.`);
     const deadline = this.phaseEndsAt;
     for (const bot of this.aliveAIs) this.aiChatter(bot, deadline);
     await sleep(DAY_MS);
