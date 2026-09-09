@@ -23,6 +23,7 @@ export interface ChatMessage {
   playerId: string | null;
   colorName: string | null;
   colorCss: string | null;
+  authorName: string | null;
   kind: ChatKind;
   text: string;
   day: number;

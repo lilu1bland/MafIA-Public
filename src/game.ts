@@ -288,6 +288,7 @@ export class Room {
       playerId: from?.id ?? null,
       colorName: from ? from.color.name : null,
       colorCss: from ? cssColor(from.color) : null,
+      authorName: kind === "ai_private" && from ? from.name : null,
       kind,
       text,
       day: this.day,

@@ -276,7 +276,7 @@ function renderGame(s) {
     const label = document.createElement("span");
     label.className = "grow";
     label.style.color = p.colorCss;
-    label.textContent = p.name ? `${p.colorName} - ${p.name}` : p.colorName;
+    label.textContent = p.isAI ? p.colorName : (p.name ? `${p.colorName} - ${p.name}` : p.colorName);
     li.appendChild(label);
     if (!p.connected) {
       const off = document.createElement("span");
@@ -287,7 +287,7 @@ function renderGame(s) {
     if (p.isAI !== undefined) {
       const tag = document.createElement("span");
       tag.className = p.isAI ? "tag ai" : "tag";
-      tag.textContent = p.isAI ? "AI" : "human";
+      tag.textContent = p.isAI ? (p.name || "AI") : "human";
       li.appendChild(tag);
     } else if (p.id === s.you.id) {
       const tag = document.createElement("span");
@@ -368,7 +368,9 @@ function addMessage(msg) {
     const author = document.createElement("span");
     author.className = "author";
     author.style.color = msg.colorCss;
-    author.textContent = msg.colorName + (msg.kind === "ai_private" ? " (AI)" : "");
+    author.textContent = msg.kind === "ai_private" && msg.authorName
+      ? msg.authorName
+      : msg.colorName;
     el.appendChild(author);
     const body = document.createElement("span");
     if (msg.kind === "gif") {
