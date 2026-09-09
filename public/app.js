@@ -32,26 +32,37 @@ function clearSession() {
 }
 
 function connect() {
+  if (state.ws && state.ws.readyState <= WebSocket.OPEN) return;
   const proto = location.protocol === "https:" ? "wss:" : "ws:";
   const ws = new WebSocket(`${proto}//${location.host}/ws`);
   state.ws = ws;
 
   ws.onopen = () => {
+    if (state.ws !== ws) return;
     $("conn").textContent = "online";
     $("conn").style.color = "green";
-    if (state.session && (state.snapshot || !state.resumeTried)) {
+    if (state.session) {
       send({ t: "resume", code: state.session.code, token: state.session.token });
     }
   };
 
   ws.onclose = () => {
+    if (state.ws !== ws) return;
+    state.ws = null;
     $("conn").textContent = "reconnecting";
     $("conn").style.color = "red";
     setTimeout(connect, 2000);
   };
 
-  ws.onmessage = (ev) => handle(JSON.parse(ev.data));
+  ws.onmessage = (ev) => {
+    if (state.ws !== ws) return;
+    handle(JSON.parse(ev.data));
+  };
 }
+
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") connect();
+});
 
 function send(obj) {
   if (state.ws && state.ws.readyState === WebSocket.OPEN) {

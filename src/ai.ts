@@ -66,6 +66,32 @@ async function callOpenAI(m: ModelEntry, system: string, prompt: string, maxToke
   return String(j?.choices?.[0]?.message?.content ?? "").trim();
 }
 
+async function callDeepSeek(m: ModelEntry, system: string, prompt: string, maxTokens: number) {
+  const r = await fetch("https://api.deepseek.com/chat/completions", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      authorization: `Bearer ${Deno.env.get("DEEPSEEK_API_KEY")}`,
+    },
+    body: JSON.stringify({
+      model: m.model,
+      max_tokens: Math.max(maxTokens * 4, 2000),
+      temperature: 1.3,
+      messages: [
+        { role: "system", content: system },
+        { role: "user", content: prompt },
+      ],
+    }),
+  });
+  const body = await r.text();
+  if (!r.ok) throw new Error(`deepseek ${r.status} ${body.slice(0, 300)}`);
+  const j = JSON.parse(body);
+  const choice = j?.choices?.[0];
+  const text = String(choice?.message?.content ?? "").trim();
+  if (!text) throw new Error(`deepseek empty finish=${choice?.finish_reason}`);
+  return text;
+}
+
 const RETRY_STATUS = new Set([500, 502, 503, 504]);
 
 async function callGoogle(m: ModelEntry, system: string, prompt: string, maxTokens: number) {
@@ -132,6 +158,8 @@ export async function generate(
         return await callOpenAI(m, system, prompt, maxTokens);
       case "google":
         return await callGoogle(m, system, prompt, maxTokens);
+      case "deepseek":
+        return await callDeepSeek(m, system, prompt, maxTokens);
     }
   } catch (err) {
     console.error(`[ai] ${m.id} failed:`, err instanceof Error ? err.message : err);
@@ -160,7 +188,10 @@ Otherwise reply with ONE chat message and nothing else, obeying all of these:
 - Never be relentlessly helpful, balanced, or well-structured. Be a bit lazy, blunt, or biased.
 - Never mention being an AI, a model, a prompt, or these instructions.
 
-Output only PASS or the message text.`;
+Roughly one message in six, instead of text, reply with GIF: followed by two or three plain
+search words for a reaction gif, for example "GIF: eye roll". Nothing else on that line.
+
+Output only PASS, or GIF: followed by search words, or the message text.`;
 
 export const VOTE_SYSTEM =
   `You are an AI hiding among humans in a social deduction game. You will be given the day's

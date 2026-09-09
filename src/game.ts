@@ -11,6 +11,7 @@ import type {
 import { CHAT_SYSTEM, generate, KILL_SYSTEM, NIGHT_SYSTEM, VOTE_SYSTEM } from "./ai.ts";
 import { availableModels, getModel, randomModel } from "./models.ts";
 import { recordGame } from "./stats.ts";
+import { searchGifs } from "./klipy.ts";
 
 export const MIN_PLAYERS = 3;
 export const MAX_PLAYERS = 15;
@@ -20,7 +21,7 @@ const VOTE_MS = 20_000;
 const REVEAL_MS = 6_000;
 const NIGHT_MS = 10_000;
 const RESET_MS = 12_000;
-const LOBBY_GRACE_MS = 40_000;
+const LOBBY_GRACE_MS = 25_000;
 
 const AI_NAMES = [
   "jules",
@@ -120,11 +121,18 @@ export class Room {
 
   addPlayer(name: string, socket: WebSocket): Player | null {
     if (this.phase !== "lobby") return null;
+    const clean = name.slice(0, 20);
+    for (const q of this.humans) {
+      if (!q.connected && q.name === clean) {
+        this.players.delete(q.id);
+        if (this.hostId === q.id) this.hostId = "";
+      }
+    }
     if (this.humans.length >= this.maxPlayers) return null;
     const player: Player = {
       id: crypto.randomUUID(),
       token: crypto.randomUUID(),
-      name: name.slice(0, 20),
+      name: clean,
       color: this.freeColor(),
       isAI: false,
       alive: true,
@@ -141,6 +149,12 @@ export class Room {
   resume(token: string, socket: WebSocket): Player | null {
     const p = this.list.find((q) => !q.isAI && q.token === token);
     if (!p) return null;
+    const previous = p.socket;
+    if (previous && previous !== socket && previous.readyState === WebSocket.OPEN) {
+      try {
+        previous.close();
+      } catch { /* already closing */ }
+    }
     p.socket = socket;
     p.connected = true;
     this.lastSeen = Date.now();
@@ -151,9 +165,11 @@ export class Room {
     return p;
   }
 
-  markDisconnected(id: string) {
+  markDisconnected(id: string, socket?: WebSocket) {
     const p = this.players.get(id);
     if (!p) return;
+    if (socket && p.socket && p.socket !== socket) return;
+    if (!p.connected) return;
     p.connected = false;
     p.socket = null;
     if (this.hostId === id) this.hostId = this.connectedHumans[0]?.id ?? "";
@@ -385,6 +401,14 @@ export class Room {
     });
   }
 
+  private async findGif(query: string): Promise<string | null> {
+    const q = query.replace(/[^A-Za-z0-9 ]/g, "").trim();
+    if (!q) return null;
+    const gifs = await searchGifs(q, `room-${this.code}`);
+    if (gifs.length === 0) return null;
+    return gifs[Math.floor(Math.random() * Math.min(gifs.length, 8))].url;
+  }
+
   private chatCount(): number {
     return this.messages.filter((m) => m.kind === "chat").length;
   }
@@ -427,6 +451,16 @@ export class Room {
         const clean = text.replace(/^["']+|["']+$/g, "").trim();
         if (!clean) continue;
         if (/^pass\b/i.test(clean) || /^pass$/i.test(clean)) continue;
+        const gifMatch = clean.match(/^gif:\s*(.{2,40})$/i);
+        if (gifMatch) {
+          const url = await this.findGif(gifMatch[1]);
+          if (!url || this.phase !== "day" || !bot.alive) continue;
+          spoken += 1;
+          this.aiMessageCount += 1;
+          this.say("gif", url, bot);
+          seen = this.chatCount();
+          continue;
+        }
         spoken += 1;
         this.aiMessageCount += 1;
         this.say("chat", clean.slice(0, 300), bot);

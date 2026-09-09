@@ -1,4 +1,4 @@
-export type ProviderId = "anthropic" | "openai" | "google";
+export type ProviderId = "anthropic" | "openai" | "google" | "deepseek";
 
 export interface ModelEntry {
   id: string;
@@ -8,13 +8,13 @@ export interface ModelEntry {
 }
 
 export const MODELS: ModelEntry[] = [
+  { id: "deepseek-chat", label: "DeepSeek Chat", provider: "deepseek", model: "deepseek-chat" },
   {
-    id: "gemini-flash-lite",
-    label: "Gemini Flash Lite",
-    provider: "google",
-    model: "gemini-flash-lite-latest",
+    id: "deepseek-reasoner",
+    label: "DeepSeek Reasoner",
+    provider: "deepseek",
+    model: "deepseek-reasoner",
   },
-  { id: "gemini-flash", label: "Gemini Flash", provider: "google", model: "gemini-flash-latest" },
 ];
 
 export function providerAvailable(p: ProviderId): boolean {
@@ -25,6 +25,8 @@ export function providerAvailable(p: ProviderId): boolean {
       return !!Deno.env.get("OPENAI_API_KEY");
     case "google":
       return !!Deno.env.get("GOOGLE_API_KEY");
+    case "deepseek":
+      return !!Deno.env.get("DEEPSEEK_API_KEY");
   }
 }
 

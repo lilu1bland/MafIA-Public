@@ -168,7 +168,7 @@ function bindSocket(socket: WebSocket) {
 
   const drop = () => {
     sockets.delete(socket);
-    if (room && me) room.markDisconnected(me.id);
+    if (room && me) room.markDisconnected(me.id, socket);
     room = null;
     me = null;
     broadcastPresence();
