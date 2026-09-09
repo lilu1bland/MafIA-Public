@@ -77,8 +77,8 @@
       <div id="host-controls" hidden>
         <div class="field-row">
           <span class="field">
-            <label for="model-select">AI model</label>
-            <select id="model-select"></select>
+            <label for="ai-count">Number of AI</label>
+            <select id="ai-count"></select>
           </span>
           <span class="field">
             <label for="lobby-visibility">Visibility</label>
@@ -88,6 +88,15 @@
             </select>
           </span>
         </div>
+        <label>AI models</label>
+        <div id="ai-models"></div>
+        <select id="model-select" hidden></select>
+        <p>
+          <label for="learn-toggle">
+            <input type="checkbox" id="learn-toggle" />
+            make the ai learn from its previous mistakes in previous rounds and learn from them
+          </label>
+        </p>
         <button id="btn-start" class="wide">Start match</button>
       </div>
       <p id="lobby-hint" class="hint"></p>

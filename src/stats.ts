@@ -38,6 +38,10 @@ export async function initStats() {
   }
 }
 
+export function kvHandle(): Deno.Kv | null {
+  return kv;
+}
+
 async function read(modelId: string): Promise<ModelStat> {
   if (kv) {
     const e = await kv.get<ModelStat>(["stats", modelId]);

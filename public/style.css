@@ -48,6 +48,8 @@ h2 { font-size: 14px; margin: 16px 0 4px; }
 p { margin: 8px 0; }
 
 label { display: block; font-size: 13px; }
+label:has(> input[type="checkbox"]) { display: flex; gap: 8px; align-items: flex-start; }
+input[type="checkbox"] { min-height: 0; width: 18px; height: 18px; flex: 0 0 auto; margin: 1px 0 0; }
 
 input, select, button {
   font: inherit;
@@ -70,6 +72,9 @@ legend { font-size: 13px; }
 .field select, .field input { width: 100%; }
 .field-row > input { flex: 1; min-width: 90px; }
 .wide { width: 100%; }
+.ai-seat { display: flex; gap: 8px; align-items: center; margin-bottom: 6px; }
+.ai-seat span { width: 44px; font-size: 13px; }
+.ai-seat select { flex: 1; min-width: 0; }
 
 ul { list-style: none; margin: 0 0 10px; padding: 0; }
 

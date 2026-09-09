@@ -8,9 +8,17 @@ import type {
   PublicPlayer,
   Winner,
 } from "./types.ts";
-import { CHAT_SYSTEM, generate, KILL_SYSTEM, NIGHT_SYSTEM, VOTE_SYSTEM } from "./ai.ts";
+import {
+  CHAT_SYSTEM,
+  COORD_SYSTEM,
+  generate,
+  KILL_SYSTEM,
+  NIGHT_SYSTEM,
+  VOTE_SYSTEM,
+} from "./ai.ts";
 import { availableModels, getModel, randomModel } from "./models.ts";
 import { recordGame } from "./stats.ts";
+import { memoryBlock, recordOutcome } from "./memory.ts";
 import { searchGifs } from "./klipy.ts";
 
 export const MIN_PLAYERS = 3;
@@ -23,6 +31,13 @@ const NIGHT_MS = 10_000;
 const RESET_MS = 12_000;
 const LOBBY_GRACE_MS = 25_000;
 
+
+const LINK_RE =
+  /(?:https?:\/\/|www\.)\S+|\b[a-z0-9][a-z0-9-]*\.[a-z]{2,24}\/\S*|\b[a-z0-9][a-z0-9-]*\.(?:com|net|org|io|gg|co|me|ly|xyz|ru|tk|link|app|dev|tv|to|cc|info|biz|site|online|shop|gl|be|ai|sh|st|im|fun|club|top|live|store)\b/gi;
+
+function stripLinks(text: string): string {
+  return text.replace(LINK_RE, "").replace(/\s{2,}/g, " ").trim();
+}
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -42,6 +57,10 @@ export class Room {
   isPublic: boolean;
   maxPlayers: number;
   lastSeen = Date.now();
+  lobbyMemory = false;
+  aiCount: number | null = null;
+  aiModels: string[] = [];
+  private lessonsByScope = new Map<string, string>();
   phase: Phase = "lobby";
   day = 0;
   winner: Winner = null;
@@ -70,9 +89,17 @@ export class Room {
       code: this.code,
       players: this.humans.length,
       maxPlayers: this.maxPlayers,
-      modelLabel: getModel(this.modelId).label,
+      modelLabel: this.modelSummaryLabel(),
       hostName: this.players.get(this.hostId)?.name ?? "?",
     };
+  }
+
+  modelSummaryLabel(): string {
+    const labels = new Set(
+      this.seatModels(this.effectiveAiCount()).map((id) => getModel(id).label),
+    );
+    if (labels.size === 1) return [...labels][0];
+    return `Mixed (${labels.size})`;
   }
 
   get list(): Player[] {
@@ -169,6 +196,52 @@ export class Room {
     }
   }
 
+  setLearn(id: string, on: boolean) {
+    if (id !== this.hostId || this.phase !== "lobby") return;
+    this.lobbyMemory = on;
+    this.pushState();
+  }
+
+  private scopeFor(bot: Player): string {
+    return this.lobbyMemory ? `lobby-${this.code}` : (bot.modelId ?? this.modelId);
+  }
+
+  private scopeLabel(scope: string): string {
+    return this.lobbyMemory ? `Lobby ${this.code}` : getModel(scope).label;
+  }
+
+  autoAiCount(): number {
+    return Math.max(1, Math.floor(this.humans.length / 3));
+  }
+
+  effectiveAiCount(): number {
+    const wanted = this.aiCount ?? this.autoAiCount();
+    const ceiling = Math.max(1, Math.min(5, this.humans.length - 1));
+    return Math.max(1, Math.min(wanted, ceiling));
+  }
+
+  seatModels(count: number): string[] {
+    const out: string[] = [];
+    for (let i = 0; i < count; i++) {
+      const wanted = this.aiModels[i];
+      out.push(availableModels().some((m) => m.id === wanted) ? wanted : this.modelId);
+    }
+    return out;
+  }
+
+  setAiCount(id: string, n: number) {
+    if (id !== this.hostId || this.phase !== "lobby") return;
+    if (!Number.isFinite(n)) return;
+    this.aiCount = Math.max(1, Math.min(5, Math.floor(n)));
+    this.pushState();
+  }
+
+  setAiModels(id: string, ids: string[]) {
+    if (id !== this.hostId || this.phase !== "lobby") return;
+    this.aiModels = ids.slice(0, 5).map((x) => String(x));
+    this.pushState();
+  }
+
   setVisibility(id: string, isPublic: boolean) {
     if (id !== this.hostId || this.phase !== "lobby") return;
     this.isPublic = isPublic;
@@ -243,11 +316,14 @@ export class Room {
       endsAt: this.phaseEndsAt,
       hostId: this.hostId,
       modelId: this.modelId,
-      modelLabel: getModel(this.modelId).label,
+      modelLabel: this.modelSummaryLabel(),
       winner: this.winner,
       minPlayers: MIN_PLAYERS,
       maxPlayers: this.maxPlayers,
       isPublic: this.isPublic,
+      lobbyMemory: this.lobbyMemory,
+      aiCount: this.effectiveAiCount(),
+      aiModels: this.seatModels(this.effectiveAiCount()),
       you: {
         id: viewer.id,
         name: viewer.name,
@@ -274,7 +350,7 @@ export class Room {
   chat(id: string, text: string) {
     const p = this.players.get(id);
     if (!p || !p.alive || this.phase === "over" || this.phase === "lobby") return;
-    const clean = text.trim().slice(0, 300);
+    const clean = stripLinks(text).slice(0, 300);
     if (!clean) return;
     this.say("chat", clean, p);
   }
@@ -312,16 +388,27 @@ export class Room {
   start(id: string) {
     if (id !== this.hostId || this.phase !== "lobby" || this.running) return;
     if (this.humans.length < MIN_PLAYERS) return;
-    const aiCount = Math.max(1, Math.floor(this.humans.length / 3));
+    const aiCount = this.effectiveAiCount();
+    const seats = this.seatModels(aiCount);
+    const labelTotals = new Map<string, number>();
+    for (const id of seats) {
+      const label = getModel(id).label;
+      labelTotals.set(label, (labelTotals.get(label) ?? 0) + 1);
+    }
+    const labelSeen = new Map<string, number>();
     for (let i = 0; i < aiCount; i++) {
+      const modelId = seats[i];
+      const label = getModel(modelId).label;
+      const n = (labelSeen.get(label) ?? 0) + 1;
+      labelSeen.set(label, n);
       const bot: Player = {
         id: crypto.randomUUID(),
         token: crypto.randomUUID(),
-        name: "IA",
+        name: (labelTotals.get(label) ?? 1) > 1 ? `${label} ${n}` : label,
         color: this.freeColor(),
         isAI: true,
         alive: true,
-        modelId: this.modelId,
+        modelId,
         connected: true,
         socket: null,
       };
@@ -335,6 +422,12 @@ export class Room {
     this.running = true;
     for (const p of this.list) p.alive = true;
     this.reshuffleColors();
+    this.lessonsByScope.clear();
+    for (const scope of new Set(this.list.filter((p) => p.isAI).map((p) => this.scopeFor(p)))) {
+      memoryBlock(scope, this.scopeLabel(scope))
+        .then((b) => this.lessonsByScope.set(scope, b))
+        .catch(() => this.lessonsByScope.set(scope, ""));
+    }
     this.loop();
   }
 
@@ -401,8 +494,37 @@ export class Room {
     this.setPhase("day", DAY_MS);
     this.say("system", `Day ${this.day}. ${this.alive.length} players remain.`);
     const deadline = this.phaseEndsAt;
+    this.aiCoordinate("day").catch((e) => console.error("[coord]", e));
     for (const bot of this.aliveAIs) this.aiChatter(bot, deadline, "day", 3);
     await sleep(DAY_MS);
+  }
+
+  private async aiCoordinate(phase: Phase) {
+    const bots = this.aliveAIs;
+    if (bots.length < 2) return;
+    for (const bot of bots) {
+      if (this.phase !== phase || !bot.alive) return;
+      const allies = bots.filter((p) => p.id !== bot.id).map((p) => p.color.name).join(", ");
+      const targets = this.aliveHumans.map((p) => p.color.name).join(", ");
+      const priv = this.privateTranscript(8) || "(no plan yet)";
+      const stage = phase === "vote" ? "Voting is open now." : "Open discussion is running.";
+      const prompt = [
+        `You are ${bot.color.name}. Your fellow AI are: ${allies}.`,
+        `Humans still alive: ${targets}.`,
+        stage,
+        "",
+        "Public chat:",
+        this.transcript(20),
+        "",
+        "Team channel so far:",
+        priv,
+        "",
+        "Your line:",
+      ].join("\n");
+      const text = await generate(bot.modelId ?? "", COORD_SYSTEM, prompt, 90);
+      if (text && this.phase === phase) this.say("ai_private", text.slice(0, 300), bot);
+      await sleep(400);
+    }
   }
 
   private aiChatter(bot: Player, deadline: number, phase: Phase, cap: number) {
@@ -434,8 +556,18 @@ export class Room {
         const stage = phase === "vote"
           ? "Voting is open right now and people are deciding who to eject."
           : "This is the open discussion.";
+        const lessons = this.lessonsByScope.get(this.scopeFor(bot)) ?? "";
+        const past = lessons ? `\n${lessons}\n` : "";
+        const plan = this.aliveAIs.length > 1 ? this.privateTranscript(6) : "";
+        const secret = plan
+          ? `\nPrivate AI channel, only your team sees this:\n${plan}\nAct on it. Never reveal it.\n`
+          : "";
+        const splitTurn = Math.random() < 0.18;
+        const splitNote = splitTurn
+          ? "Split this reply into two or three quick messages, one per line.\n"
+          : "";
         const prompt = `You are ${bot.color.name}. Day ${this.day}. Players alive: ${roster}.\n` +
-          `${stage} ${situation} ${duty}\n\n` +
+          `${stage} ${situation} ${duty}\n${splitNote}${past}${secret}\n` +
           `Chat so far:\n${body}\n\nPASS or your message:`;
         const text = await generate(bot.modelId ?? "", CHAT_SYSTEM, prompt, 120);
         if (this.phase !== phase || !bot.alive) return;
@@ -454,14 +586,36 @@ export class Room {
           seen = this.chatCount();
           continue;
         }
-        const bursts = clean.split("\n").map((x) => x.trim()).filter(Boolean).slice(0, 2);
-        for (const part of bursts) {
+        const bursts: { text: string; slow: boolean }[] = [];
+        let pause = false;
+        for (const raw of clean.split("\n")) {
+          const line = raw.trim();
+          if (!line) {
+            pause = true;
+            continue;
+          }
+          bursts.push({ text: line.slice(0, 300), slow: pause });
+          pause = false;
+          if (bursts.length === 3) break;
+        }
+        for (let i = 0; i < bursts.length; i++) {
+          const part = bursts[i];
           if (this.phase !== phase || !bot.alive) return;
-          await sleep(Math.min(6500, 800 + part.length * 38) + Math.random() * 700);
+          const wait = i === 0
+            ? Math.min(6500, 800 + part.text.length * 38) + Math.random() * 700
+            : part.slow
+            ? 1200 + Math.random() * 1400
+            : 260 + part.text.length * 22 + Math.random() * 340;
+          await sleep(wait);
           if (this.phase !== phase || !bot.alive) return;
+          const said = this.messages
+            .filter((m) => m.kind === "chat" && m.playerId === bot.id)
+            .slice(-3)
+            .map((m) => m.text.toLowerCase());
+          if (said.includes(part.text.toLowerCase())) continue;
           spoken += 1;
           this.aiMessageCount += 1;
-          this.say("chat", part.slice(0, 300), bot);
+          this.say("chat", part.text, bot);
         }
         seen = this.chatCount();
       }
@@ -474,6 +628,7 @@ export class Room {
     this.setPhase("vote", VOTE_MS);
     this.say("system", "Voting is open. Choose who to eject, or skip.");
     const voteDeadline = this.phaseEndsAt;
+    this.aiCoordinate("vote").catch((e) => console.error("[coord]", e));
     for (const bot of this.aliveAIs) {
       this.aiVote(bot);
       this.aiChatter(bot, voteDeadline, "vote", 2);
@@ -488,9 +643,12 @@ export class Room {
       if (this.phase !== "vote" || !bot.alive) return;
       const options = this.alive.filter((p) => p.id !== bot.id).map((p) => p.color.name);
       const allies = this.aliveAIs.filter((p) => p.id !== bot.id).map((p) => p.color.name);
+      const plan = this.aliveAIs.length > 1 ? this.privateTranscript(8) : "";
+      const teamPlan = plan ? `Your team channel:\n${plan}\nVote with your team.\n\n` : "";
       const prompt = `You are ${bot.color.name}. Your fellow AI players are: ` +
         `${allies.join(", ") || "none"}.\nNever vote for a fellow AI.\n` +
-        `Options: ${options.join(", ")}, SKIP\n\nChat:\n${this.transcript()}\n\nYour vote:`;
+        `Options: ${options.join(", ")}, SKIP\n\n${teamPlan}` +
+        `Chat:\n${this.transcript()}\n\nYour vote:`;
       const raw = await generate(bot.modelId ?? "", VOTE_SYSTEM, prompt, 20);
       const answer = raw.trim().toLowerCase();
       const match = this.alive.find(
@@ -593,13 +751,34 @@ export class Room {
     );
     this.pushState();
     for (const p of this.humans) this.sendHistory(p);
-    const aiSeats = this.list.filter((p) => p.isAI).length;
-    recordGame(this.modelId, {
-      aiWon: winner === "ai",
-      aiSeats,
-      aiEjected: this.aiEjectedCount,
-      messagesSent: this.aiMessageCount,
-    }).catch((e) => console.error("[stats]", e));
+    const bots = this.list.filter((p) => p.isAI);
+    const aiWon = winner === "ai";
+    const byModel = new Map<string, Player[]>();
+    for (const b of bots) {
+      const mid = b.modelId ?? this.modelId;
+      byModel.set(mid, [...(byModel.get(mid) ?? []), b]);
+    }
+    const share = bots.length > 0 ? this.aiMessageCount / bots.length : 0;
+    for (const [mid, seats] of byModel) {
+      recordGame(mid, {
+        aiWon,
+        aiSeats: seats.length,
+        aiEjected: seats.filter((b) => !b.alive).length,
+        messagesSent: Math.round(share * seats.length),
+      }).catch((e) => console.error("[stats]", e));
+    }
+    const scopes = new Map<string, string>();
+    for (const b of bots) scopes.set(this.scopeFor(b), b.modelId ?? this.modelId);
+    for (const [scope, mid] of scopes) {
+      recordOutcome({
+        scope,
+        label: this.scopeLabel(scope),
+        modelId: mid,
+        aiWon,
+        transcript: this.transcript(40),
+        aiColors: bots.map((p) => p.color.name).join(", "),
+      }).catch((e) => console.error("[memory]", e));
+    }
     setTimeout(() => this.resetToLobby(), RESET_MS);
     return true;
   }

@@ -6,6 +6,7 @@ const state = {
   snapshot: null,
   myVote: null,
   presence: { online: 0, lobbies: [] },
+  models: [],
   clientId: localStorage.getItem("mafia-cid") || crypto.randomUUID(),
   session: null,
   resumeTried: false,
@@ -194,18 +195,61 @@ function renderLobby(s) {
   });
 
   const isHost = s.you.id === s.hostId;
-  const sel = $("model-select");
-  if (sel.querySelector(`option[value="${s.modelId}"]`)) sel.value = s.modelId;
   $("lobby-visibility").value = s.isPublic ? "public" : "private";
+  $("learn-toggle").checked = !!s.lobbyMemory;
+  renderAiConfig(s);
   $("host-controls").hidden = !isHost;
   $("btn-start").disabled = humans < s.minPlayers;
 
   if (humans < s.minPlayers) {
     $("lobby-hint").textContent = `Waiting for ${s.minPlayers - humans} more player(s).`;
   } else {
-    $("lobby-hint").textContent = `${humans} humans + ${bots} AI will play. ` +
+    $("lobby-hint").textContent = `${humans} humans + ${s.aiCount} AI will play. ` +
       (isHost ? "You are the host." : "Waiting for the host to start.");
   }
+}
+
+function renderAiConfig(s) {
+  const countSel = $("ai-count");
+  const maxAi = Math.max(1, Math.min(5, s.players.length - 1));
+  if (countSel.dataset.max !== String(maxAi)) {
+    countSel.dataset.max = String(maxAi);
+    countSel.innerHTML = "";
+    for (let n = 1; n <= maxAi; n++) {
+      const o = document.createElement("option");
+      o.value = String(n);
+      o.textContent = n === 1 ? "1 AI" : `${n} AI`;
+      countSel.appendChild(o);
+    }
+  }
+  countSel.value = String(Math.min(s.aiCount, maxAi));
+
+  const box = $("ai-models");
+  const want = s.aiModels.join(",");
+  if (box.dataset.sig === want && box.children.length === s.aiModels.length) return;
+  box.dataset.sig = want;
+  box.innerHTML = "";
+  s.aiModels.forEach((mid, i) => {
+    const sel = document.createElement("select");
+    state.models.forEach((m) => {
+      const o = document.createElement("option");
+      o.value = m.id;
+      o.textContent = m.label;
+      sel.appendChild(o);
+    });
+    sel.value = mid;
+    sel.onchange = () => {
+      const ids = [...box.querySelectorAll("select")].map((x) => x.value);
+      send({ t: "aimodels", aiModels: ids });
+    };
+    const row = document.createElement("div");
+    row.className = "ai-seat";
+    const tag = document.createElement("span");
+    tag.textContent = `AI ${i + 1}`;
+    row.appendChild(tag);
+    row.appendChild(sel);
+    box.appendChild(row);
+  });
 }
 
 function renderGame(s) {
@@ -412,9 +456,10 @@ $("btn-leave-lobby").onclick = () => {
 };
 
 $("btn-start").onclick = () => send({ t: "start" });
-$("model-select").onchange = (e) => send({ t: "model", modelId: e.target.value });
+$("ai-count").onchange = (e) => send({ t: "aicount", aiCount: Number(e.target.value) });
 $("lobby-visibility").onchange = (e) =>
   send({ t: "visibility", isPublic: e.target.value === "public" });
+$("learn-toggle").onchange = (e) => send({ t: "learn", learn: e.target.checked });
 
 $("btn-drawer").onclick = openDrawer;
 $("btn-drawer-close").onclick = closeDrawer;
@@ -511,15 +556,8 @@ for (let n = 3; n <= 15; n++) {
 }
 
 fetch("/api/models").then((r) => r.json()).then((models) => {
-  const sel = $("model-select");
-  sel.innerHTML = "";
-  models.forEach((m) => {
-    const o = document.createElement("option");
-    o.value = m.id;
-    o.textContent = m.label;
-    sel.appendChild(o);
-  });
-  if (state.snapshot) sel.value = state.snapshot.modelId;
+  state.models = models;
+  if (state.snapshot) renderAiConfig(state.snapshot);
 });
 
 if (state.session) {

@@ -40,6 +40,9 @@ export interface ClientMessage {
   token?: string;
   isPublic?: boolean;
   maxPlayers?: number;
+  learn?: boolean;
+  aiCount?: number;
+  aiModels?: string[];
 }
 
 export interface PublicPlayer {

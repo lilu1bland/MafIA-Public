@@ -3,7 +3,8 @@ import { contentType } from "@std/media-types";
 import { extname, fromFileUrl, join, normalize } from "@std/path";
 import { createRoom, getRoom, publicLobbies, reapRooms, roomCount } from "./src/rooms.ts";
 import { MAX_PLAYERS, MIN_PLAYERS } from "./src/game.ts";
-import { availableModels } from "./src/models.ts";
+import { availableModels, MODELS } from "./src/models.ts";
+import { allMemories } from "./src/memory.ts";
 import { initStats, leaderboard } from "./src/stats.ts";
 import { searchGifs } from "./src/klipy.ts";
 import type { ClientMessage, Player } from "./src/types.ts";
@@ -145,6 +146,15 @@ function bindSocket(socket: WebSocket) {
         room.setVisibility(me.id, Boolean(data.isPublic));
         broadcastPresence();
         break;
+      case "learn":
+        room.setLearn(me.id, Boolean(data.learn));
+        break;
+      case "aicount":
+        room.setAiCount(me.id, Number(data.aiCount));
+        break;
+      case "aimodels":
+        room.setAiModels(me.id, Array.isArray(data.aiModels) ? data.aiModels : []);
+        break;
       case "chat":
         room.chat(me.id, String(data.text ?? ""));
         break;
@@ -200,6 +210,10 @@ Deno.serve({ port: PORT }, async (req) => {
 
   if (url.pathname === "/api/models") {
     return json(availableModels().map((m) => ({ id: m.id, label: m.label })));
+  }
+
+  if (url.pathname === "/api/strategies") {
+    return json(await allMemories(MODELS.map((m) => m.id)));
   }
 
   if (url.pathname === "/api/stats") {
