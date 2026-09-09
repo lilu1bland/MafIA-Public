@@ -218,7 +218,7 @@ function renderAiConfig(s) {
     for (let n = 1; n <= maxAi; n++) {
       const o = document.createElement("option");
       o.value = String(n);
-      o.textContent = n === 1 ? "1 AI" : `${n} AI`;
+      o.textContent = String(n);
       countSel.appendChild(o);
     }
   }
