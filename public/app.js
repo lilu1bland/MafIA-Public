@@ -125,14 +125,13 @@ function renderPresence() {
     li.appendChild(code);
     const label = document.createElement("span");
     label.className = "grow";
-    label.textContent = `${l.hostName} · ${l.modelLabel}`;
+    label.textContent = `${l.hostName} - ${l.modelLabel}`;
     li.appendChild(label);
     const count = document.createElement("span");
     count.className = "tag";
     count.textContent = `${l.players}/${l.maxPlayers}`;
     li.appendChild(count);
     const join = document.createElement("button");
-    join.className = "small";
     join.textContent = "Join";
     join.onclick = () => joinCode(l.code);
     li.appendChild(join);
@@ -219,13 +218,10 @@ function renderGame(s) {
     const li = document.createElement("li");
     if (!p.alive) li.classList.add("dead");
     if (!p.connected) li.classList.add("offline");
-    const sw = document.createElement("span");
-    sw.className = "swatch";
-    sw.style.background = p.colorCss;
-    li.appendChild(sw);
     const label = document.createElement("span");
     label.className = "grow";
-    label.textContent = p.name ? `${p.colorName} · ${p.name}` : p.colorName;
+    label.style.color = p.colorCss;
+    label.textContent = p.name ? `${p.colorName} - ${p.name}` : p.colorName;
     li.appendChild(label);
     if (!p.connected) {
       const off = document.createElement("span");
@@ -269,12 +265,9 @@ function renderVote(s) {
   options.forEach((p) => {
     const b = document.createElement("button");
     if (state.myVote === p.id) b.classList.add("chosen");
-    const sw = document.createElement("span");
-    sw.className = "swatch";
-    sw.style.background = p.colorCss;
-    b.appendChild(sw);
     const label = document.createElement("span");
     label.className = "grow";
+    label.style.color = p.colorCss;
     label.textContent = p.colorName;
     b.appendChild(label);
     const count = document.createElement("span");

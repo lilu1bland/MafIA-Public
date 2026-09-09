@@ -3,7 +3,6 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-<meta name="theme-color" content="#ffffff" />
 <title>MafIA</title>
 <link rel="stylesheet" href="/style.css" />
 </head>
@@ -12,9 +11,9 @@
 <header>
   <b>MafIA</b>
   <span class="header-right">
-    <span id="online-count" class="pill">0 online</span>
-    <button id="btn-stats" class="small">Leaderboard</button>
-    <span id="conn" class="conn">connecting</span>
+    <span id="online-count">0 online</span>
+    <button id="btn-stats">Leaderboard</button>
+    <span id="conn">connecting</span>
   </span>
 </header>
 
@@ -23,13 +22,13 @@
   <section id="screen-home" class="screen active">
     <div class="pane">
       <h1>MafIA</h1>
-      <p class="tagline">what if mafia, among us, and AI had a child?</p>
+      <p>what if mafia, among us, and AI had a child?</p>
 
-      <div id="reconnect-bar" class="notice" hidden>
+      <div id="reconnect-bar" hidden>
         <span id="reconnect-text">You have a match in progress.</span>
-        <span class="notice-actions">
-          <button id="btn-reconnect" class="primary">Rejoin</button>
-          <button id="btn-forget" class="small">Dismiss</button>
+        <span>
+          <button id="btn-reconnect">Rejoin</button>
+          <button id="btn-forget">Dismiss</button>
         </span>
       </div>
 
@@ -51,7 +50,7 @@
             <select id="max-players"></select>
           </span>
         </div>
-        <button id="btn-create" class="primary wide">Create lobby</button>
+        <button id="btn-create" class="wide">Create lobby</button>
       </fieldset>
 
       <fieldset>
@@ -73,7 +72,7 @@
   <section id="screen-lobby" class="screen">
     <div class="pane">
       <h1>Lobby <span id="lobby-code">----</span></h1>
-      <p class="meta"><span id="lobby-count"></span> &middot; <span id="lobby-model"></span></p>
+      <p><span id="lobby-count"></span> &middot; <span id="lobby-model"></span></p>
       <ul id="lobby-players"></ul>
       <div id="host-controls" hidden>
         <div class="field-row">
@@ -89,10 +88,10 @@
             </select>
           </span>
         </div>
-        <button id="btn-start" class="primary wide">Start match</button>
+        <button id="btn-start" class="wide">Start match</button>
       </div>
       <p id="lobby-hint" class="hint"></p>
-      <button id="btn-leave-lobby" class="small">Leave lobby</button>
+      <button id="btn-leave-lobby">Leave lobby</button>
     </div>
   </section>
 
@@ -102,22 +101,22 @@
         <span id="phase-label"></span>
         <span class="phase-right">
           <span id="phase-timer">--</span>
-          <button id="btn-drawer" class="small">Players</button>
+          <button id="btn-drawer">Players</button>
         </span>
       </div>
       <div id="messages"></div>
       <p id="spectator-bar" hidden>You are dead. You can watch but not speak or vote.</p>
       <div id="composer">
-        <button id="btn-gif" class="small">GIF</button>
+        <button id="btn-gif">GIF</button>
         <input id="chat-input" maxlength="300" placeholder="Message" autocomplete="off"
           autocapitalize="sentences" enterkeyhint="send" />
-        <button id="btn-send" class="primary">Send</button>
+        <button id="btn-send">Send</button>
       </div>
     </div>
     <aside id="sidebar">
       <div class="drawer-head">
         <h2 id="sidebar-title">Players</h2>
-        <button id="btn-drawer-close" class="small">Close</button>
+        <button id="btn-drawer-close">Close</button>
       </div>
       <ul id="game-players"></ul>
       <div id="vote-panel" hidden>
@@ -135,7 +134,7 @@
   <div class="modal-body">
     <div class="modal-head">
       <input id="gif-search" placeholder="Search GIFs" autocomplete="off" />
-      <button id="gif-close" class="small">Close</button>
+      <button id="gif-close">Close</button>
     </div>
     <div id="gif-results"></div>
     <p id="gif-note" class="hint"></p>
@@ -146,7 +145,7 @@
   <div class="modal-body">
     <div class="modal-head">
       <h2>Model leaderboard</h2>
-      <button id="stats-close" class="small">Close</button>
+      <button id="stats-close">Close</button>
     </div>
     <div id="stats-body"></div>
   </div>
