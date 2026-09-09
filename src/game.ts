@@ -202,12 +202,20 @@ export class Room {
     this.pushState();
   }
 
-  private scopeFor(bot: Player): string {
-    return this.lobbyMemory ? `lobby-${this.code}` : (bot.modelId ?? this.modelId);
+  private scopesFor(bot: Player): string[] {
+    const model = bot.modelId ?? this.modelId;
+    return this.lobbyMemory ? [model, `lobby-${this.code}`] : [model];
+  }
+
+  private lessonsFor(bot: Player): string {
+    return this.scopesFor(bot)
+      .map((sc) => this.lessonsByScope.get(sc) ?? "")
+      .filter(Boolean)
+      .join("\n");
   }
 
   private scopeLabel(scope: string): string {
-    return this.lobbyMemory ? `Lobby ${this.code}` : getModel(scope).label;
+    return scope.startsWith("lobby-") ? `Lobby ${this.code}` : getModel(scope).label;
   }
 
   autoAiCount(): number {
@@ -423,7 +431,8 @@ export class Room {
     for (const p of this.list) p.alive = true;
     this.reshuffleColors();
     this.lessonsByScope.clear();
-    for (const scope of new Set(this.list.filter((p) => p.isAI).map((p) => this.scopeFor(p)))) {
+    const startScopes = new Set(this.list.filter((p) => p.isAI).flatMap((p) => this.scopesFor(p)));
+    for (const scope of startScopes) {
       memoryBlock(scope, this.scopeLabel(scope))
         .then((b) => this.lessonsByScope.set(scope, b))
         .catch(() => this.lessonsByScope.set(scope, ""));
@@ -550,24 +559,18 @@ export class Room {
         const situation = fresh === 0
           ? "Nobody has spoken since you last checked."
           : `${fresh} new message(s) since you last checked.`;
-        const duty = spoken === 0 && phase === "day"
-          ? "You have not spoken at all this round. You must reply with a message, not PASS."
-          : `You have sent ${spoken} message(s) this round.`;
+        const duty = `You have sent ${spoken} message(s) this round.`;
         const stage = phase === "vote"
           ? "Voting is open right now and people are deciding who to eject."
           : "This is the open discussion.";
-        const lessons = this.lessonsByScope.get(this.scopeFor(bot)) ?? "";
+        const lessons = this.lessonsFor(bot);
         const past = lessons ? `\n${lessons}\n` : "";
         const plan = this.aliveAIs.length > 1 ? this.privateTranscript(6) : "";
         const secret = plan
           ? `\nPrivate AI channel, only your team sees this:\n${plan}\nAct on it. Never reveal it.\n`
           : "";
-        const splitTurn = Math.random() < 0.18;
-        const splitNote = splitTurn
-          ? "Split this reply into two or three quick messages, one per line.\n"
-          : "";
         const prompt = `You are ${bot.color.name}. Day ${this.day}. Players alive: ${roster}.\n` +
-          `${stage} ${situation} ${duty}\n${splitNote}${past}${secret}\n` +
+          `${stage} ${situation} ${duty}\n${past}${secret}\n` +
           `Chat so far:\n${body}\n\nPASS or your message:`;
         const text = await generate(bot.modelId ?? "", CHAT_SYSTEM, prompt, 120);
         if (this.phase !== phase || !bot.alive) return;
@@ -586,36 +589,19 @@ export class Room {
           seen = this.chatCount();
           continue;
         }
-        const bursts: { text: string; slow: boolean }[] = [];
-        let pause = false;
-        for (const raw of clean.split("\n")) {
-          const line = raw.trim();
-          if (!line) {
-            pause = true;
-            continue;
-          }
-          bursts.push({ text: line.slice(0, 300), slow: pause });
-          pause = false;
-          if (bursts.length === 3) break;
-        }
-        for (let i = 0; i < bursts.length; i++) {
-          const part = bursts[i];
+        const line = clean.split("\n").map((x) => x.trim()).filter(Boolean)[0] ?? "";
+        if (line) {
           if (this.phase !== phase || !bot.alive) return;
-          const wait = i === 0
-            ? Math.min(6500, 800 + part.text.length * 38) + Math.random() * 700
-            : part.slow
-            ? 1200 + Math.random() * 1400
-            : 260 + part.text.length * 22 + Math.random() * 340;
-          await sleep(wait);
+          await sleep(Math.min(6500, 800 + line.length * 38) + Math.random() * 700);
           if (this.phase !== phase || !bot.alive) return;
           const said = this.messages
             .filter((m) => m.kind === "chat" && m.playerId === bot.id)
             .slice(-3)
             .map((m) => m.text.toLowerCase());
-          if (said.includes(part.text.toLowerCase())) continue;
+          if (said.includes(line.toLowerCase())) continue;
           spoken += 1;
           this.aiMessageCount += 1;
-          this.say("chat", part.text, bot);
+          this.say("chat", line.slice(0, 300), bot);
         }
         seen = this.chatCount();
       }
@@ -768,7 +754,9 @@ export class Room {
       }).catch((e) => console.error("[stats]", e));
     }
     const scopes = new Map<string, string>();
-    for (const b of bots) scopes.set(this.scopeFor(b), b.modelId ?? this.modelId);
+    for (const b of bots) {
+      for (const sc of this.scopesFor(b)) scopes.set(sc, b.modelId ?? this.modelId);
+    }
     for (const [scope, mid] of scopes) {
       recordOutcome({
         scope,
