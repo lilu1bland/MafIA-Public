@@ -5,11 +5,31 @@ const state = {
   playerId: null,
   snapshot: null,
   myVote: null,
+  presence: { online: 0, lobbies: [] },
   clientId: localStorage.getItem("mafia-cid") || crypto.randomUUID(),
+  session: null,
+  resumeTried: false,
 };
 
 localStorage.setItem("mafia-cid", state.clientId);
 $("name").value = localStorage.getItem("mafia-name") || "";
+
+try {
+  state.session = JSON.parse(localStorage.getItem("mafia-session") || "null");
+} catch {
+  state.session = null;
+}
+
+function saveSession(code, token) {
+  state.session = { code, token };
+  localStorage.setItem("mafia-session", JSON.stringify(state.session));
+}
+
+function clearSession() {
+  state.session = null;
+  localStorage.removeItem("mafia-session");
+  $("reconnect-bar").hidden = true;
+}
 
 function connect() {
   const proto = location.protocol === "https:" ? "wss:" : "ws:";
@@ -19,12 +39,15 @@ function connect() {
   ws.onopen = () => {
     $("conn").textContent = "online";
     $("conn").style.color = "green";
+    if (state.session && (state.snapshot || !state.resumeTried)) {
+      send({ t: "resume", code: state.session.code, token: state.session.token });
+    }
   };
 
   ws.onclose = () => {
-    $("conn").textContent = "disconnected";
+    $("conn").textContent = "reconnecting";
     $("conn").style.color = "red";
-    setTimeout(connect, 2500);
+    setTimeout(connect, 2000);
   };
 
   ws.onmessage = (ev) => handle(JSON.parse(ev.data));
@@ -37,13 +60,28 @@ function send(obj) {
 }
 
 function handle(m) {
+  if (m.t === "presence") {
+    state.presence = m;
+    renderPresence();
+    return;
+  }
   if (m.t === "error") {
     $("home-error").textContent = m.msg;
     return;
   }
+  if (m.t === "resume_failed") {
+    state.resumeTried = true;
+    clearSession();
+    state.snapshot = null;
+    showScreen("screen-home");
+    return;
+  }
   if (m.t === "joined") {
     state.playerId = m.playerId;
+    state.resumeTried = true;
+    saveSession(m.code, m.token);
     $("home-error").textContent = "";
+    $("reconnect-bar").hidden = true;
     return;
   }
   if (m.t === "history") {
@@ -68,12 +106,43 @@ function handle(m) {
 function showScreen(id) {
   document.querySelectorAll(".screen").forEach((s) => s.classList.remove("active"));
   $(id).classList.add("active");
+  if (id !== "screen-game") closeDrawer();
+}
+
+function renderPresence() {
+  const p = state.presence;
+  $("online-count").textContent = `${p.online} online`;
+
+  const ul = $("lobby-list");
+  ul.innerHTML = "";
+  const lobbies = p.lobbies || [];
+  $("lobby-list-empty").hidden = lobbies.length > 0;
+  lobbies.forEach((l) => {
+    const li = document.createElement("li");
+    const code = document.createElement("span");
+    code.className = "code";
+    code.textContent = l.code;
+    li.appendChild(code);
+    const label = document.createElement("span");
+    label.className = "grow";
+    label.textContent = `${l.hostName} · ${l.modelLabel}`;
+    li.appendChild(label);
+    const count = document.createElement("span");
+    count.className = "tag";
+    count.textContent = `${l.players}/${l.maxPlayers}`;
+    li.appendChild(count);
+    const join = document.createElement("button");
+    join.className = "small";
+    join.textContent = "Join";
+    join.onclick = () => joinCode(l.code);
+    li.appendChild(join);
+    ul.appendChild(li);
+  });
 }
 
 function render() {
   const s = state.snapshot;
   if (!s) return;
-
   if (s.phase === "lobby") {
     showScreen("screen-lobby");
     renderLobby(s);
@@ -94,9 +163,17 @@ function renderLobby(s) {
   ul.innerHTML = "";
   s.players.forEach((p) => {
     const li = document.createElement("li");
+    if (!p.connected) li.classList.add("offline");
     const label = document.createElement("span");
+    label.className = "grow";
     label.textContent = p.name || "player";
     li.appendChild(label);
+    if (!p.connected) {
+      const off = document.createElement("span");
+      off.className = "tag off";
+      off.textContent = "disconnected";
+      li.appendChild(off);
+    }
     if (p.id === s.hostId) {
       const tag = document.createElement("span");
       tag.className = "tag";
@@ -109,6 +186,7 @@ function renderLobby(s) {
   const isHost = s.you.id === s.hostId;
   const sel = $("model-select");
   if (sel.querySelector(`option[value="${s.modelId}"]`)) sel.value = s.modelId;
+  $("lobby-visibility").value = s.isPublic ? "public" : "private";
   $("host-controls").hidden = !isHost;
   $("btn-start").disabled = humans < s.minPlayers;
 
@@ -140,13 +218,21 @@ function renderGame(s) {
   s.players.forEach((p) => {
     const li = document.createElement("li");
     if (!p.alive) li.classList.add("dead");
+    if (!p.connected) li.classList.add("offline");
     const sw = document.createElement("span");
     sw.className = "swatch";
     sw.style.background = p.colorCss;
     li.appendChild(sw);
     const label = document.createElement("span");
+    label.className = "grow";
     label.textContent = p.name ? `${p.colorName} · ${p.name}` : p.colorName;
     li.appendChild(label);
+    if (!p.connected) {
+      const off = document.createElement("span");
+      off.className = "tag off";
+      off.textContent = "offline";
+      li.appendChild(off);
+    }
     if (p.isAI !== undefined) {
       const tag = document.createElement("span");
       tag.className = p.isAI ? "tag ai" : "tag";
@@ -168,7 +254,6 @@ function renderGame(s) {
   const banner = $("result-banner");
   if (s.phase === "over") {
     banner.hidden = false;
-    banner.className = `result-banner ${s.winner}`;
     banner.textContent = s.winner === "humans"
       ? "The humans found every AI."
       : "The AI outnumber the humans.";
@@ -189,6 +274,7 @@ function renderVote(s) {
     sw.style.background = p.colorCss;
     b.appendChild(sw);
     const label = document.createElement("span");
+    label.className = "grow";
     label.textContent = p.colorName;
     b.appendChild(label);
     const count = document.createElement("span");
@@ -205,7 +291,10 @@ function renderVote(s) {
 
   const skip = document.createElement("button");
   if (state.myVote === "skip") skip.classList.add("chosen");
-  skip.textContent = "Skip vote";
+  const skipLabel = document.createElement("span");
+  skipLabel.className = "grow";
+  skipLabel.textContent = "Skip vote";
+  skip.appendChild(skipLabel);
   const sc = document.createElement("span");
   sc.className = "vote-count";
   sc.textContent = (s.votes && s.votes.skip) || "";
@@ -234,11 +323,11 @@ function addMessage(msg) {
     author.textContent = msg.colorName + (msg.kind === "ai_private" ? " (AI)" : "");
     el.appendChild(author);
     const body = document.createElement("span");
-    body.className = "body";
     if (msg.kind === "gif") {
       const img = document.createElement("img");
       img.src = msg.text;
       img.alt = "gif";
+      img.onload = () => (box.scrollTop = box.scrollHeight);
       body.appendChild(img);
     } else {
       body.textContent = msg.text;
@@ -248,6 +337,16 @@ function addMessage(msg) {
 
   box.appendChild(el);
   box.scrollTop = box.scrollHeight;
+}
+
+function openDrawer() {
+  $("sidebar").classList.add("open");
+  $("drawer-scrim").hidden = false;
+}
+
+function closeDrawer() {
+  $("sidebar").classList.remove("open");
+  $("drawer-scrim").hidden = true;
 }
 
 setInterval(() => {
@@ -261,25 +360,61 @@ setInterval(() => {
   el.textContent = left + "s";
 }, 250);
 
-$("btn-create").onclick = () => {
+function requireName() {
   const name = $("name").value.trim();
-  if (!name) return ($("home-error").textContent = "Pick a name first.");
+  if (!name) {
+    $("home-error").textContent = "Pick a name first.";
+    return null;
+  }
   localStorage.setItem("mafia-name", name);
-  send({ t: "create", name });
+  return name;
+}
+
+function joinCode(code) {
+  const name = requireName();
+  if (!name) return;
+  send({ t: "join", name, code });
+}
+
+$("btn-create").onclick = () => {
+  const name = requireName();
+  if (!name) return;
+  send({
+    t: "create",
+    name,
+    isPublic: $("visibility").value === "public",
+    maxPlayers: Number($("max-players").value),
+  });
 };
 
 $("btn-join").onclick = () => {
-  const name = $("name").value.trim();
   const code = $("code").value.trim();
-  if (!name) return ($("home-error").textContent = "Pick a name first.");
   if (!/^\d{4}$/.test(code)) return ($("home-error").textContent = "Codes are four digits.");
-  localStorage.setItem("mafia-name", name);
-  send({ t: "join", name, code });
+  joinCode(code);
+};
+
+$("btn-reconnect").onclick = () => {
+  if (!state.session) return;
+  send({ t: "resume", code: state.session.code, token: state.session.token });
+};
+
+$("btn-forget").onclick = clearSession;
+
+$("btn-leave-lobby").onclick = () => {
+  send({ t: "leave" });
+  clearSession();
+  state.snapshot = null;
+  showScreen("screen-home");
 };
 
 $("btn-start").onclick = () => send({ t: "start" });
-
 $("model-select").onchange = (e) => send({ t: "model", modelId: e.target.value });
+$("lobby-visibility").onchange = (e) =>
+  send({ t: "visibility", isPublic: e.target.value === "public" });
+
+$("btn-drawer").onclick = openDrawer;
+$("btn-drawer-close").onclick = closeDrawer;
+$("drawer-scrim").onclick = closeDrawer;
 
 function sendChat() {
   const input = $("chat-input");
@@ -291,7 +426,10 @@ function sendChat() {
 
 $("btn-send").onclick = sendChat;
 $("chat-input").addEventListener("keydown", (e) => {
-  if (e.key === "Enter") sendChat();
+  if (e.key === "Enter") {
+    e.preventDefault();
+    sendChat();
+  }
 });
 $("code").addEventListener("keydown", (e) => {
   if (e.key === "Enter") $("btn-join").click();
@@ -359,6 +497,15 @@ $("btn-stats").onclick = async () => {
 
 $("stats-close").onclick = () => ($("stats-modal").hidden = true);
 
+const capSelect = $("max-players");
+for (let n = 3; n <= 15; n++) {
+  const o = document.createElement("option");
+  o.value = String(n);
+  o.textContent = `${n} players`;
+  if (n === 8) o.selected = true;
+  capSelect.appendChild(o);
+}
+
 fetch("/api/models").then((r) => r.json()).then((models) => {
   const sel = $("model-select");
   sel.innerHTML = "";
@@ -370,5 +517,10 @@ fetch("/api/models").then((r) => r.json()).then((models) => {
   });
   if (state.snapshot) sel.value = state.snapshot.modelId;
 });
+
+if (state.session) {
+  $("reconnect-bar").hidden = false;
+  $("reconnect-text").textContent = `You were in lobby ${state.session.code}.`;
+}
 
 connect();

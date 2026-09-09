@@ -1,7 +1,7 @@
 import { load } from "@std/dotenv";
 import { contentType } from "@std/media-types";
 import { extname, fromFileUrl, join, normalize } from "@std/path";
-import { createRoom, getRoom, reapRooms, roomCount } from "./src/rooms.ts";
+import { createRoom, getRoom, publicLobbies, reapRooms, roomCount } from "./src/rooms.ts";
 import { MAX_PLAYERS, MIN_PLAYERS } from "./src/game.ts";
 import { availableModels } from "./src/models.ts";
 import { initStats, leaderboard } from "./src/stats.ts";
@@ -19,6 +19,29 @@ await initStats();
 
 const PORT = Number(Deno.env.get("PORT") ?? 8000);
 const PUBLIC_DIR = fromFileUrl(new URL("./public/", import.meta.url));
+
+const sockets = new Set<WebSocket>();
+
+function presencePayload() {
+  return JSON.stringify({
+    t: "presence",
+    online: sockets.size,
+    lobbies: publicLobbies(),
+  });
+}
+
+function broadcastPresence() {
+  const payload = presencePayload();
+  for (const ws of sockets) {
+    if (ws.readyState === WebSocket.OPEN) {
+      try {
+        ws.send(payload);
+      } catch {
+        sockets.delete(ws);
+      }
+    }
+  }
+}
 
 function json(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), {
@@ -53,9 +76,16 @@ function bindSocket(socket: WebSocket) {
   const attach = (r: Room, p: Player) => {
     room = r;
     me = p;
-    socket.send(JSON.stringify({ t: "joined", playerId: p.id, code: r.code }));
+    socket.send(JSON.stringify({ t: "joined", playerId: p.id, code: r.code, token: p.token }));
     r.pushState();
     r.sendHistory(p);
+    broadcastPresence();
+  };
+
+  socket.onopen = () => {
+    sockets.add(socket);
+    socket.send(presencePayload());
+    broadcastPresence();
   };
 
   socket.onmessage = (ev) => {
@@ -66,9 +96,20 @@ function bindSocket(socket: WebSocket) {
       return;
     }
 
+    if (data.t === "resume") {
+      if (room) return;
+      const r = getRoom(String(data.code ?? ""));
+      if (!r) return socket.send(JSON.stringify({ t: "resume_failed" }));
+      const p = r.resume(String(data.token ?? ""), socket);
+      if (!p) return socket.send(JSON.stringify({ t: "resume_failed" }));
+      attach(r, p);
+      return;
+    }
+
     if (data.t === "create") {
       if (room) return;
-      const r = createRoom();
+      const cap = Number(data.maxPlayers ?? MAX_PLAYERS);
+      const r = createRoom(Boolean(data.isPublic), Number.isFinite(cap) ? cap : MAX_PLAYERS);
       const p = r.addPlayer(String(data.name ?? "player"), socket);
       if (!p) return fail("Could not create lobby.");
       attach(r, p);
@@ -81,12 +122,13 @@ function bindSocket(socket: WebSocket) {
       if (!r) return fail("No lobby with that code.");
       if (r.phase !== "lobby") return fail("That match has already started.");
       const p = r.addPlayer(String(data.name ?? "player"), socket);
-      if (!p) return fail(`That lobby is full (${MAX_PLAYERS} players).`);
+      if (!p) return fail(`That lobby is full (${r.maxPlayers} players).`);
       attach(r, p);
       return;
     }
 
     if (!room || !me) return;
+    room.lastSeen = Date.now();
 
     switch (data.t) {
       case "start":
@@ -94,9 +136,14 @@ function bindSocket(socket: WebSocket) {
           return fail(`You need at least ${MIN_PLAYERS} players.`);
         }
         room.start(me.id);
+        broadcastPresence();
         break;
       case "model":
         room.setModel(me.id, String(data.modelId ?? ""));
+        break;
+      case "visibility":
+        room.setVisibility(me.id, Boolean(data.isPublic));
+        broadcastPresence();
         break;
       case "chat":
         room.chat(me.id, String(data.text ?? ""));
@@ -107,6 +154,12 @@ function bindSocket(socket: WebSocket) {
       case "vote":
         room.vote(me.id, String(data.target ?? "skip"));
         break;
+      case "leave":
+        room.markDisconnected(me.id);
+        room = null;
+        me = null;
+        broadcastPresence();
+        break;
       case "ping":
         socket.send(JSON.stringify({ t: "pong" }));
         break;
@@ -114,9 +167,11 @@ function bindSocket(socket: WebSocket) {
   };
 
   const drop = () => {
-    if (room && me) room.removePlayer(me.id);
+    sockets.delete(socket);
+    if (room && me) room.markDisconnected(me.id);
     room = null;
     me = null;
+    broadcastPresence();
   };
 
   socket.onclose = drop;
@@ -136,7 +191,11 @@ Deno.serve({ port: PORT }, async (req) => {
   }
 
   if (url.pathname === "/api/health") {
-    return json({ ok: true, rooms: roomCount() });
+    return json({ ok: true, rooms: roomCount(), online: sockets.size });
+  }
+
+  if (url.pathname === "/api/lobbies") {
+    return json({ online: sockets.size, lobbies: publicLobbies() });
   }
 
   if (url.pathname === "/api/models") {
@@ -157,5 +216,6 @@ Deno.serve({ port: PORT }, async (req) => {
 });
 
 setInterval(reapRooms, 60_000);
+setInterval(broadcastPresence, 5_000);
 
 console.log(`MafIA listening on http://localhost:${PORT}`);

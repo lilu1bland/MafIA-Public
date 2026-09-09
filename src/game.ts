@@ -1,5 +1,13 @@
 import { COLORS, cssColor, type GameColor } from "./colors.ts";
-import type { ChatKind, ChatMessage, Phase, Player, PublicPlayer, Winner } from "./types.ts";
+import type {
+  ChatKind,
+  ChatMessage,
+  LobbySummary,
+  Phase,
+  Player,
+  PublicPlayer,
+  Winner,
+} from "./types.ts";
 import { CHAT_SYSTEM, generate, KILL_SYSTEM, NIGHT_SYSTEM, VOTE_SYSTEM } from "./ai.ts";
 import { availableModels, getModel, randomModel } from "./models.ts";
 import { recordGame } from "./stats.ts";
@@ -12,6 +20,7 @@ const VOTE_MS = 20_000;
 const REVEAL_MS = 6_000;
 const NIGHT_MS = 10_000;
 const RESET_MS = 12_000;
+const LOBBY_GRACE_MS = 40_000;
 
 const AI_NAMES = [
   "jules",
@@ -46,6 +55,9 @@ export class Room {
   code: string;
   hostId = "";
   modelId: string;
+  isPublic: boolean;
+  maxPlayers: number;
+  lastSeen = Date.now();
   phase: Phase = "lobby";
   day = 0;
   winner: Winner = null;
@@ -58,9 +70,25 @@ export class Room {
   private aiMessageCount = 0;
   private aiEjectedCount = 0;
 
-  constructor(code: string) {
+  constructor(code: string, isPublic = false, maxPlayers = MAX_PLAYERS) {
     this.code = code;
+    this.isPublic = isPublic;
+    this.maxPlayers = Math.min(MAX_PLAYERS, Math.max(MIN_PLAYERS, Math.floor(maxPlayers)));
     this.modelId = randomModel().id;
+  }
+
+  get connectedHumans(): Player[] {
+    return this.humans.filter((p) => p.connected);
+  }
+
+  summary(): LobbySummary {
+    return {
+      code: this.code,
+      players: this.humans.length,
+      maxPlayers: this.maxPlayers,
+      modelLabel: getModel(this.modelId).label,
+      hostName: this.players.get(this.hostId)?.name ?? "?",
+    };
   }
 
   get list(): Player[] {
@@ -92,9 +120,10 @@ export class Room {
 
   addPlayer(name: string, socket: WebSocket): Player | null {
     if (this.phase !== "lobby") return null;
-    if (this.humans.length >= MAX_PLAYERS) return null;
+    if (this.humans.length >= this.maxPlayers) return null;
     const player: Player = {
       id: crypto.randomUUID(),
+      token: crypto.randomUUID(),
       name: name.slice(0, 20),
       color: this.freeColor(),
       isAI: false,
@@ -105,19 +134,45 @@ export class Room {
     };
     this.players.set(player.id, player);
     if (!this.hostId) this.hostId = player.id;
+    this.lastSeen = Date.now();
     return player;
   }
 
-  removePlayer(id: string) {
+  resume(token: string, socket: WebSocket): Player | null {
+    const p = this.list.find((q) => !q.isAI && q.token === token);
+    if (!p) return null;
+    p.socket = socket;
+    p.connected = true;
+    this.lastSeen = Date.now();
+    if (!this.players.has(this.hostId) || !this.players.get(this.hostId)?.connected) {
+      this.hostId = this.connectedHumans[0]?.id ?? this.hostId;
+    }
+    this.pushState();
+    return p;
+  }
+
+  markDisconnected(id: string) {
     const p = this.players.get(id);
     if (!p) return;
+    p.connected = false;
+    p.socket = null;
+    if (this.hostId === id) this.hostId = this.connectedHumans[0]?.id ?? "";
+    this.pushState();
     if (this.phase === "lobby") {
-      this.players.delete(id);
-      if (this.hostId === id) this.hostId = this.humans[0]?.id ?? "";
-    } else {
-      p.connected = false;
-      p.socket = null;
+      setTimeout(() => {
+        const q = this.players.get(id);
+        if (q && !q.connected && this.phase === "lobby") {
+          this.players.delete(id);
+          if (this.hostId === id) this.hostId = this.connectedHumans[0]?.id ?? "";
+          this.pushState();
+        }
+      }, LOBBY_GRACE_MS);
     }
+  }
+
+  setVisibility(id: string, isPublic: boolean) {
+    if (id !== this.hostId || this.phase !== "lobby") return;
+    this.isPublic = isPublic;
     this.pushState();
   }
 
@@ -169,6 +224,7 @@ export class Room {
         colorName: p.color.name,
         colorCss: cssColor(p.color),
         alive: p.alive,
+        connected: p.isAI || p.connected,
       };
       if (inLobby || revealAll || p.id === viewer.id) base.name = p.name;
       if (revealAll) {
@@ -191,7 +247,8 @@ export class Room {
       modelLabel: getModel(this.modelId).label,
       winner: this.winner,
       minPlayers: MIN_PLAYERS,
-      maxPlayers: MAX_PLAYERS,
+      maxPlayers: this.maxPlayers,
+      isPublic: this.isPublic,
       you: {
         id: viewer.id,
         name: viewer.name,
@@ -261,6 +318,7 @@ export class Room {
     for (let i = 0; i < aiCount; i++) {
       const bot: Player = {
         id: crypto.randomUUID(),
+        token: crypto.randomUUID(),
         name: names[i] ?? `bot${i}`,
         color: this.freeColor(),
         isAI: true,
@@ -515,6 +573,7 @@ export class Room {
       else if (!p.connected) this.players.delete(p.id);
       else p.alive = true;
     }
+    this.lastSeen = Date.now();
     this.modelId = randomModel().id;
     this.phase = "lobby";
     this.day = 0;

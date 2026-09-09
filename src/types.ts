@@ -6,6 +6,7 @@ export type Winner = "humans" | "ai" | null;
 
 export interface Player {
   id: string;
+  token: string;
   name: string;
   color: GameColor;
   isAI: boolean;
@@ -36,6 +37,9 @@ export interface ClientMessage {
   url?: string;
   target?: string;
   modelId?: string;
+  token?: string;
+  isPublic?: boolean;
+  maxPlayers?: number;
 }
 
 export interface PublicPlayer {
@@ -43,7 +47,16 @@ export interface PublicPlayer {
   colorName: string;
   colorCss: string;
   alive: boolean;
+  connected: boolean;
   name?: string;
   isAI?: boolean;
   modelId?: string | null;
+}
+
+export interface LobbySummary {
+  code: string;
+  players: number;
+  maxPlayers: number;
+  modelLabel: string;
+  hostName: string;
 }
