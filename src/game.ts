@@ -23,23 +23,6 @@ const NIGHT_MS = 10_000;
 const RESET_MS = 12_000;
 const LOBBY_GRACE_MS = 25_000;
 
-const AI_NAMES = [
-  "jules",
-  "mika",
-  "sam",
-  "noor",
-  "kai",
-  "ren",
-  "toby",
-  "alex",
-  "quinn",
-  "robin",
-  "esme",
-  "ivo",
-  "nadia",
-  "wren",
-  "dev",
-];
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -330,12 +313,11 @@ export class Room {
     if (id !== this.hostId || this.phase !== "lobby" || this.running) return;
     if (this.humans.length < MIN_PLAYERS) return;
     const aiCount = Math.max(1, Math.floor(this.humans.length / 3));
-    const names = shuffle(AI_NAMES);
     for (let i = 0; i < aiCount; i++) {
       const bot: Player = {
         id: crypto.randomUUID(),
         token: crypto.randomUUID(),
-        name: names[i] ?? `bot${i}`,
+        name: "IA",
         color: this.freeColor(),
         isAI: true,
         alive: true,
@@ -419,51 +401,68 @@ export class Room {
     this.setPhase("day", DAY_MS);
     this.say("system", `Day ${this.day}. ${this.alive.length} players remain.`);
     const deadline = this.phaseEndsAt;
-    for (const bot of this.aliveAIs) this.aiChatter(bot, deadline);
+    for (const bot of this.aliveAIs) this.aiChatter(bot, deadline, "day", 3);
     await sleep(DAY_MS);
   }
 
-  private aiChatter(bot: Player, deadline: number) {
+  private aiChatter(bot: Player, deadline: number, phase: Phase, cap: number) {
     (async () => {
       let spoken = 0;
       let seen = this.chatCount();
-      while (this.phase === "day" && bot.alive && Date.now() < deadline - 2500) {
+      while (this.phase === phase && bot.alive && Date.now() < deadline - 2500) {
         await sleep(2000 + Math.random() * 4000);
-        if (this.phase !== "day" || !bot.alive || Date.now() > deadline - 2500) return;
-        if (spoken >= 3) return;
+        if (this.phase !== phase || !bot.alive || Date.now() > deadline - 2500) return;
+        if (spoken >= cap) return;
         const count = this.chatCount();
         const fresh = count - seen;
         seen = count;
         if (fresh === 0 && spoken > 0) continue;
+        const lastForeign = [...this.messages].reverse().find(
+          (m) => m.kind === "chat" && m.playerId !== bot.id,
+        );
+        if (lastForeign && lastForeign.text.includes("?") && Date.now() - lastForeign.ts < 5000) {
+          continue;
+        }
         const roster = this.alive.map((p) => p.color.name).join(", ");
         const body = this.transcript() || "(nobody has spoken yet)";
         const situation = fresh === 0
           ? "Nobody has spoken since you last checked."
           : `${fresh} new message(s) since you last checked.`;
-        const duty = spoken === 0
+        const duty = spoken === 0 && phase === "day"
           ? "You have not spoken at all this round. You must reply with a message, not PASS."
           : `You have sent ${spoken} message(s) this round.`;
+        const stage = phase === "vote"
+          ? "Voting is open right now and people are deciding who to eject."
+          : "This is the open discussion.";
         const prompt = `You are ${bot.color.name}. Day ${this.day}. Players alive: ${roster}.\n` +
-          `${situation} ${duty}\n\n` +
+          `${stage} ${situation} ${duty}\n\n` +
           `Chat so far:\n${body}\n\nPASS or your message:`;
         const text = await generate(bot.modelId ?? "", CHAT_SYSTEM, prompt, 120);
-        if (this.phase !== "day" || !bot.alive) return;
+        if (this.phase !== phase || !bot.alive) return;
         const clean = text.replace(/^["']+|["']+$/g, "").trim();
         if (!clean) continue;
         if (/^pass\b/i.test(clean) || /^pass$/i.test(clean)) continue;
         const gifMatch = clean.match(/^gif:\s*(.{2,40})$/i);
         if (gifMatch) {
           const url = await this.findGif(gifMatch[1]);
-          if (!url || this.phase !== "day" || !bot.alive) continue;
+          if (!url) continue;
+          await sleep(1200 + Math.random() * 1800);
+          if (this.phase !== phase || !bot.alive) return;
           spoken += 1;
           this.aiMessageCount += 1;
           this.say("gif", url, bot);
           seen = this.chatCount();
           continue;
         }
-        spoken += 1;
-        this.aiMessageCount += 1;
-        this.say("chat", clean.slice(0, 300), bot);
+        const bursts = clean.split("\n").map((x) => x.trim()).filter(Boolean).slice(0, 2);
+        for (const part of bursts) {
+          if (this.phase !== phase || !bot.alive) return;
+          await sleep(Math.min(6500, 800 + part.length * 38) + Math.random() * 700);
+          if (this.phase !== phase || !bot.alive) return;
+          spoken += 1;
+          this.aiMessageCount += 1;
+          this.say("chat", part.slice(0, 300), bot);
+        }
         seen = this.chatCount();
       }
     })();
@@ -474,7 +473,11 @@ export class Room {
     this.lastVoteAt.clear();
     this.setPhase("vote", VOTE_MS);
     this.say("system", "Voting is open. Choose who to eject, or skip.");
-    for (const bot of this.aliveAIs) this.aiVote(bot);
+    const voteDeadline = this.phaseEndsAt;
+    for (const bot of this.aliveAIs) {
+      this.aiVote(bot);
+      this.aiChatter(bot, voteDeadline, "vote", 2);
+    }
     await sleep(VOTE_MS);
     await this.resolveVote();
   }
